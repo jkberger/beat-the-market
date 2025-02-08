@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for
 from sklearn.ensemble import RandomForestClassifier
 import alpaca_trade_api as tradeapi
@@ -352,6 +353,8 @@ def live_trading_loop(symbol, sleep_interval=60):
 # ----------------------------
 # Flask Application and Routes
 # ----------------------------
+load_dotenv()
+
 app = Flask(__name__)
 
 @app.route("/")

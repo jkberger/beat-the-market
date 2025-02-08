@@ -4,3 +4,4 @@ pandas
 scikit-learn
 yfinance
 alpaca-trade-api
+python-dotenv

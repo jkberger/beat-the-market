@@ -41,12 +41,10 @@ If for some reason you dont have the requirements.txt file you can run:
 > pip install flask numpy pandas scikit-learn yfinance alpaca-trade-api plotly
 
 ### 4. Configure Alpaca API Credentials
-```MacOs or linux
-> export ALPACA_API_KEY=your_api_key_here
-> export ALPACA_SECRET_KEY=your_secret_key_here
-```Windows
-> set ALPACA_API_KEY=your_api_key_here
-> set ALPACA_SECRET_KEY=your_secret_key_here
+Create a .env file at the root level of this repository and add the 
+following two lines:
+> ALPACA_API_KEY=your_api_key_here
+> ALPACA_SECRET_KEY=your_secret_key_here
 
 ### 5. Run the application
 > python3 trading_app.py
