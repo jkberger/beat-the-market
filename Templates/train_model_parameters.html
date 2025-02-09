@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Custom Model Training Parameters - Trading App</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .condition-row { margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <div class="container">
+      <a class="navbar-brand" href="/dashboard">Trading App Dashboard</a>
+    </div>
+  </nav>
+  <div class="container mt-4">
+    <h2>Custom Model Training Parameters</h2>
+    <p>Define your indicator conditions for BUY and SELL actions. A row is labeled as BUY only if ALL buy conditions are met and NONE of the sell conditions are met, and vice versa for SELL. Then name your custom model.</p>
+    <p><em>{{ supported_note }}</em></p>
+    <form method="POST" action="/train_model_custom" id="customForm">
+      <div class="mb-3">
+        <label for="model_name" class="form-label">Model Name:</label>
+        <input type="text" class="form-control" id="model_name" name="model_name" placeholder="e.g., MyAlphaModel">
+      </div>
+      <h4>Buy Conditions</h4>
+      <div id="buyConditions">
+        <div class="row condition-row" id="buyCondition_1">
+          <div class="col-md-3">
+            <label for="buy_indicator_1">Indicator</label>
+            <select class="form-select" id="buy_indicator_1" name="buy_indicator_1">
+              <option value="">-- Select --</option>
+              {% for ind in available_indicators %}
+              <option value="{{ ind }}">{{ ind }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label for="buy_period_1">Period</label>
+            <input type="number" class="form-control" id="buy_period_1" name="buy_period_1" placeholder="e.g., 20">
+          </div>
+          <div class="col-md-2">
+            <label for="buy_operator_1">Operator</label>
+            <select class="form-select" id="buy_operator_1" name="buy_operator_1">
+              <option value="">-- Select --</option>
+              {% for op in operators %}
+              <option value="{{ op }}">{{ op }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label for="buy_threshold_1">Threshold</label>
+            <input type="text" class="form-control" id="buy_threshold_1" name="buy_threshold_1" placeholder="e.g., 70">
+          </div>
+          <div class="col-md-2">
+            <label>&nbsp;</label>
+            <button type="button" class="btn btn-outline-primary form-control" id="addBuy">+</button>
+          </div>
+        </div>
+      </div>
+      <h4>Sell Conditions</h4>
+      <div id="sellConditions">
+        <div class="row condition-row" id="sellCondition_1">
+          <div class="col-md-3">
+            <label for="sell_indicator_1">Indicator</label>
+            <select class="form-select" id="sell_indicator_1" name="sell_indicator_1">
+              <option value="">-- Select --</option>
+              {% for ind in available_indicators %}
+              <option value="{{ ind }}">{{ ind }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label for="sell_period_1">Period</label>
+            <input type="number" class="form-control" id="sell_period_1" name="sell_period_1" placeholder="e.g., 20">
+          </div>
+          <div class="col-md-2">
+            <label for="sell_operator_1">Operator</label>
+            <select class="form-select" id="sell_operator_1" name="sell_operator_1">
+              <option value="">-- Select --</option>
+              {% for op in operators %}
+              <option value="{{ op }}">{{ op }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label for="sell_threshold_1">Threshold</label>
+            <input type="text" class="form-control" id="sell_threshold_1" name="sell_threshold_1" placeholder="e.g., 30">
+          </div>
+          <div class="col-md-2">
+            <label>&nbsp;</label>
+            <button type="button" class="btn btn-outline-primary form-control" id="addSell">+</button>
+          </div>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary mt-3">Train Custom Model</button>
+    </form>
+    <a href="/dashboard" class="btn btn-secondary mt-3">Back to Dashboard</a>
+  </div>
+  <script>
+    // Dynamic addition for Buy Conditions
+    let buyCount = 1;
+    document.getElementById("addBuy").addEventListener("click", function() {
+      buyCount++;
+      let newRow = document.getElementById("buyCondition_1").cloneNode(true);
+      newRow.id = "buyCondition_" + buyCount;
+      newRow.querySelectorAll("select, input, button").forEach(function(elem) {
+        if (elem.id) {
+          let parts = elem.id.split("_");
+          let prefix = parts[0];
+          elem.id = prefix + "_" + buyCount;
+        }
+        if (elem.name) {
+          let parts = elem.name.split("_");
+          let prefix = parts[0];
+          elem.name = prefix + "_" + buyCount;
+        }
+      });
+      document.getElementById("buyConditions").appendChild(newRow);
+    });
+    // Dynamic addition for Sell Conditions
+    let sellCount = 1;
+    document.getElementById("addSell").addEventListener("click", function() {
+      sellCount++;
+      let newRow = document.getElementById("sellCondition_1").cloneNode(true);
+      newRow.id = "sellCondition_" + sellCount;
+      newRow.querySelectorAll("select, input, button").forEach(function(elem) {
+        if (elem.id) {
+          let parts = elem.id.split("_");
+          let prefix = parts[0];
+          elem.id = prefix + "_" + sellCount;
+        }
+        if (elem.name) {
+          let parts = elem.name.split("_");
+          let prefix = parts[0];
+          elem.name = prefix + "_" + sellCount;
+        }
+      });
+      document.getElementById("sellConditions").appendChild(newRow);
+    });
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,611 @@
+#!/usr/bin/env python3
+"""
+trading_app.py
+
+This application trains and tests trading models using a custom model workflow.
+Users define indicator conditions for BUY and SELL (each condition specifying an indicator,
+a period, an operator, and a threshold) and name the model.
+A row is labeled as BUY only if ALL buy conditions are met and NONE of the sell conditions are met;
+labeled as SELL only if ALL sell conditions are met and NONE of the buy conditions are met.
+Rows that do not satisfy one group exactly are skipped.
+
+The app backtests models on historical data (displaying a chart with portfolio value and trade actions)
+and integrates with Alpaca for paper trading.
+"""
+
+import os
+import pickle
+import threading
+import time
+from datetime import datetime, timedelta
+
+import numpy as np
+import pandas as pd
+import yfinance as yf
+from flask import Flask, render_template, request, redirect, url_for
+from sklearn.ensemble import RandomForestClassifier
+import alpaca_trade_api as tradeapi
+import ta  # Technical analysis library
+
+# ----------------------------
+# Utility: Get S&P 500 tickers from Wikipedia
+# ----------------------------
+def get_sp500_tickers():
+    url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+    try:
+        tables = pd.read_html(url)
+        df = tables[0]
+        tickers = df["Symbol"].tolist()
+        tickers = [ticker.replace('.', '-') for ticker in tickers]
+        return tickers
+    except Exception as e:
+        print("Error fetching S&P 500 list:", e)
+        return []
+
+# ----------------------------
+# Helper: List available models in the models/ directory
+# ----------------------------
+def get_available_models():
+    models_dir = "models"
+    if not os.path.exists(models_dir):
+        return []
+    files = os.listdir(models_dir)
+    model_names = [os.path.splitext(f)[0] for f in files if f.endswith(".pkl")]
+    return model_names
+
+# ----------------------------
+# Helper: check_condition
+# ----------------------------
+def check_condition(row, col_name, op, threshold):
+    """Return True if the value in row[col_name] meets the condition op threshold; otherwise, False."""
+    try:
+        value = float(row[col_name])
+    except Exception:
+        return False
+    try:
+        threshold = float(threshold)
+    except Exception:
+        return False
+    if op == ">":
+        return value > threshold
+    elif op == "<":
+        return value < threshold
+    elif op == ">=":
+        return value >= threshold
+    elif op == "<=":
+        return value <= threshold
+    elif op == "=":
+        return value == threshold
+    else:
+        return False
+
+# ----------------------------
+# Data Fetching and Column Cleaning
+# ----------------------------
+def fetch_data(symbol, start, end):
+    """
+    Download daily historical data for a given ticker using yfinance.
+    Reset the index and clean column names so that, for example, "Close MMM" becomes "Close".
+    """
+    df = yf.download(symbol, start=start, end=end, progress=False, interval="1d")
+    df.reset_index(inplace=True)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [' '.join(map(str, col)).strip() for col in df.columns.values]
+    else:
+        df.columns = [str(col).strip() for col in df.columns]
+    # Clean column names: if a column contains whitespace, take the first token.
+    cleaned_columns = []
+    for col in df.columns:
+        if col.lower() == "date":
+            cleaned_columns.append("Date")
+        else:
+            cleaned_columns.append(col.split()[0])
+    df.columns = cleaned_columns
+    print(f"Ticker {symbol} cleaned columns: {df.columns.tolist()}")
+    if "Date" not in df.columns:
+        raise ValueError(f"Ticker {symbol}: 'Date' column not found.")
+    df['Date'] = pd.to_datetime(df['Date'])
+    return df
+
+# ----------------------------
+# Prepare Base Data for Custom Training
+# ----------------------------
+def prepare_base_data(df):
+    """
+    Prepare raw data for custom model training.
+    Ensure that essential columns are present:
+      - "Date"
+      - "Close"
+    Retain additional columns ("High", "Low", "Volume") if available.
+    Do not compute any technical indicators here.
+    """
+    if "Close" not in df.columns:
+        if "Adj" in df.columns:
+            df["Close"] = df["Adj"]
+        else:
+            raise ValueError("Neither 'Close' nor 'Adj' found in data.")
+    df = df.sort_values("Date")
+    return df
+
+# ----------------------------
+# Technical Indicator Functions using ta
+# ----------------------------
+indicator_functions = {
+    "SMA": lambda df, period: ta.trend.sma_indicator(df["Close"], window=period),
+    "EMA": lambda df, period: ta.trend.ema_indicator(df["Close"], window=period),
+    "RSI": lambda df, period: ta.momentum.rsi(df["Close"], window=period),
+    "MACD": lambda df, period: ta.trend.macd(df["Close"], window_fast=period, window_slow=period*2, window_sign=max(1, period//2)),
+    "ATR": lambda df, period: ta.volatility.average_true_range(high=df["High"], low=df["Low"], close=df["Close"], window=period),
+    "CCI": lambda df, period: ta.trend.cci(high=df["High"], low=df["Low"], close=df["Close"], window=period, constant=0.015),
+    "ADX": lambda df, period: ta.trend.adx(high=df["High"], low=df["Low"], close=df["Close"], window=period),
+    "OBV": lambda df, period: ta.volume.on_balance_volume(df["Close"], df["Volume"]),
+    "STOCH": lambda df, period: ta.momentum.stoch(high=df["High"], low=df["Low"], close=df["Close"], window=period, smooth_window=3)
+}
+
+# ----------------------------
+# (Legacy) Default Feature Engineering (Not used for custom training)
+# ----------------------------
+def add_features(df):
+    """
+    (Legacy – not used for custom training.)
+    Compute default features using ta: SMA_20, SMA_50, RSI_14.
+    """
+    if "Close" not in df.columns:
+        if "Adj" in df.columns:
+            df["Close"] = df["Adj"]
+        else:
+            raise ValueError("Neither 'Close' nor 'Adj' found in data.")
+    if isinstance(df["Close"], pd.DataFrame):
+        df["Close"] = df["Close"].iloc[:, 0]
+    df = df.sort_values("Date")
+    df["SMA_20"] = ta.trend.sma_indicator(df["Close"], window=20)
+    df["SMA_50"] = ta.trend.sma_indicator(df["Close"], window=50)
+    df["RSI_14"] = ta.momentum.rsi(df["Close"], window=14)
+    df = df.dropna(subset=["SMA_20", "SMA_50", "RSI_14"])
+    df["Signal"] = (df["SMA_20"] > df["SMA_50"]).astype(int)
+    return df
+
+# ----------------------------
+# Custom Model Training and Loading
+# ----------------------------
+def train_custom_model(buy_conditions, sell_conditions, model_name="Custom"):
+    """
+    Train a custom model using user-defined conditions.
+    Each condition is a tuple: (indicator, period, operator, threshold).
+    For each ticker:
+      - Fetch raw data and prepare base data.
+      - For each required indicator (e.g. "RSI_14"), if not present, compute it using indicator_functions.
+      - Label each row:
+            Label as 1 if ALL buy conditions are met and ALL sell conditions are NOT met.
+            Label as 0 if ALL sell conditions are met and ALL buy conditions are NOT met.
+            Otherwise, skip the row.
+      - Use the union of {"Close"} plus all required indicator columns as features.
+      - Train a RandomForestClassifier and save the model as a dictionary
+        {"model": model, "features": features_list} to "models/<model_name>.pkl".
+    """
+    tickers = get_sp500_tickers()
+    valid_dfs = []
+    end = datetime.today().date()
+    start = end - timedelta(days=365 * 2)
+    required_features = {"Close"}
+    for cond in buy_conditions + sell_conditions:
+        indicator, period, op, thr = cond
+        required_features.add(f"{indicator}_{period}")
+    valid_count = 0
+    for ticker in tickers:
+        try:
+            df = fetch_data(ticker, start, end)
+            df = prepare_base_data(df)
+            if df.empty:
+                print(f"{ticker}: No data after preparing base data. Skipping.")
+                continue
+            if "Close" not in df.columns:
+                print(f"{ticker}: 'Close' not found. Skipping.")
+                continue
+            for feat in required_features:
+                if feat == "Close":
+                    continue
+                if feat not in df.columns:
+                    try:
+                        indicator, period_str = feat.split("_")
+                        period = int(period_str)
+                    except Exception:
+                        continue
+                    if indicator.upper() in indicator_functions:
+                        df[feat] = indicator_functions[indicator.upper()](df, period)
+                    else:
+                        print(f"{ticker}: Indicator {indicator} not supported. Skipping condition.")
+                        continue
+            df = df.dropna(subset=list(required_features))
+            if df.empty:
+                print(f"{ticker}: All rows dropped after computing required features. Skipping.")
+                continue
+            def label_row(row):
+                # Label as BUY (1) only if all buy conditions are met AND all sell conditions are NOT met.
+                buy_met = all(check_condition(row, f"{ind}_{period}", op, thr)
+                              for (ind, period, op, thr) in buy_conditions)
+                sell_met = all(check_condition(row, f"{ind}_{period}", op, thr)
+                               for (ind, period, op, thr) in sell_conditions)
+                if buy_met and not sell_met:
+                    return 1
+                elif sell_met and not buy_met:
+                    return 0
+                else:
+                    return None
+            df["CustomLabel"] = df.apply(label_row, axis=1)
+            df = df.dropna(subset=["CustomLabel"])
+            if df.empty:
+                print(f"{ticker}: No rows met custom conditions. Skipping.")
+                continue
+            df["CustomLabel"] = df["CustomLabel"].astype(int)
+            df["Ticker"] = ticker
+            valid_dfs.append(df)
+            valid_count += 1
+            print(f"{ticker}: Collected {len(df)} custom-labeled rows.")
+        except Exception as e:
+            print(f"Error processing {ticker}: {e}")
+    if not valid_dfs:
+        raise ValueError(f"No valid data collected for custom training from {valid_count} tickers.")
+    combined_df = pd.concat(valid_dfs, ignore_index=True)
+    print(f"Combined custom training data shape: {combined_df.shape}")
+    features_list = list(required_features)
+    X = combined_df[features_list].values
+    y = combined_df["CustomLabel"].values
+    if np.isnan(y).any():
+        raise ValueError("Custom target contains NaN values.")
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X, y)
+    model_data = {"model": model, "features": features_list}
+    if not os.path.exists("models"):
+        os.makedirs("models")
+    model_filename = f"models/{model_name}.pkl"
+    with open(model_filename, "wb") as f:
+        pickle.dump(model_data, f)
+    print(f"Custom model trained and saved as '{model_filename}'.")
+    return model_data, combined_df
+
+def load_custom_model(model_name="Custom"):
+    model_file = f"models/{model_name}.pkl"
+    if os.path.exists(model_file):
+        with open(model_file, "rb") as f:
+            model_data = pickle.load(f)
+        return model_data  # dict with keys "model" and "features"
+    else:
+        raise ValueError("Custom model not found. Please train the custom model first.")
+
+def load_model(model_name):
+    model_data = load_custom_model(model_name)
+    return model_data["model"], model_data["features"]
+
+# ----------------------------
+# Backtesting with Trade Action Recording
+# ----------------------------
+def backtest_model(symbol, model_name):
+    """
+    Backtest the selected custom model on a given stock.
+    Use raw base data and compute only the required indicator features.
+    Record trade actions (buy/sell) with date, price, and indicator values.
+    Returns a tuple: (df, actions)
+      - df: DataFrame with "Portfolio Value"
+      - actions: List of dictionaries for each trade action.
+    """
+    model, feature_cols = load_model(model_name)
+    end = datetime.today().date()
+    start = end - timedelta(days=365)
+    df = fetch_data(symbol, start, end)
+    df = prepare_base_data(df)
+    for feat in feature_cols:
+        if feat == "Close":
+            continue
+        if feat not in df.columns:
+            try:
+                indicator, period_str = feat.split("_")
+                period = int(period_str)
+            except Exception:
+                continue
+            if indicator.upper() in indicator_functions:
+                df[feat] = indicator_functions[indicator.upper()](df, period)
+    df = df.dropna(subset=feature_cols)
+    X = df[feature_cols].values
+    df["Prediction"] = model.predict(X)
+    initial_capital = 10000.0
+    position = 0
+    cash = initial_capital
+    portfolio_values = []
+    actions = []
+    for idx, row in df.iterrows():
+        price = float(row["Close"])
+        pred = int(row["Prediction"])
+        if pred == 1 and cash >= price:
+            position += 1
+            cash -= price
+            actions.append({
+                "Date": row["Date"].strftime("%Y-%m-%d"),
+                "Action": "BUY",
+                "Close": price,
+                "Indicators": {col: row[col] for col in feature_cols if col != "Close"}
+            })
+        elif pred == 0 and position > 0:
+            cash += position * price
+            actions.append({
+                "Date": row["Date"].strftime("%Y-%m-%d"),
+                "Action": "SELL",
+                "Close": price,
+                "Indicators": {col: row[col] for col in feature_cols if col != "Close"}
+            })
+            position = 0
+        portfolio_values.append(cash + position * price)
+    df["Portfolio Value"] = portfolio_values
+    return df, actions
+
+# ----------------------------
+# Alpaca Trading Bot (Unchanged)
+# ----------------------------
+ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY")
+ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY")
+ALPACA_BASE_URL = "https://paper-api.alpaca.markets"
+class AlpacaBot:
+    def __init__(self):
+        if not ALPACA_API_KEY or not ALPACA_SECRET_KEY:
+            raise ValueError("Alpaca API credentials not set.")
+        self.api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_BASE_URL, api_version="v2")
+    def get_account(self):
+        return self.api.get_account()
+    def get_position(self, symbol):
+        try:
+            position = self.api.get_position(symbol)
+            return float(position.qty)
+        except Exception:
+            return 0.0
+    def is_market_open(self):
+        clock = self.api.get_clock()
+        return clock.is_open
+    def place_order(self, symbol, qty, side, order_type="market", time_in_force="gtc"):
+        order = self.api.submit_order(symbol=symbol, qty=qty, side=side,
+                                      type=order_type, time_in_force=time_in_force)
+        return order
+
+# ----------------------------
+# Live Trading Loop (Modified to use Custom Model)
+# ----------------------------
+live_trading_thread = None
+trading_stop_event = threading.Event()
+trade_history = []
+account_history = []
+initial_equity = None
+def live_trading_loop(symbol, sleep_interval=60):
+    global initial_equity, account_history, trade_history
+    print(f"Starting live trading loop for {symbol}")
+    bot = AlpacaBot()
+    model, feature_cols = load_model("Custom")
+    account = bot.get_account()
+    initial_equity = float(account.equity)
+    account_history.clear()
+    trade_history.clear()
+    while not trading_stop_event.is_set():
+        try:
+            if not bot.is_market_open():
+                print("Market closed. Waiting...")
+                time.sleep(sleep_interval)
+                continue
+            print(f"Live trading iteration for {symbol} at {datetime.now()}")
+            end_date = datetime.today().date()
+            start_date = end_date - timedelta(days=10)
+            df = fetch_data(symbol, start_date, end_date)
+            df = prepare_base_data(df)
+            for feat in feature_cols:
+                if feat == "Close":
+                    continue
+                if feat not in df.columns:
+                    try:
+                        indicator, period_str = feat.split("_")
+                        period = int(period_str)
+                    except Exception:
+                        continue
+                    if indicator.upper() in indicator_functions:
+                        df[feat] = indicator_functions[indicator.upper()](df, period)
+            df = df.dropna(subset=feature_cols)
+            if df.empty:
+                print("No data fetched. Skipping iteration.")
+                time.sleep(sleep_interval)
+                continue
+            last_row = df.iloc[-1]
+            X = np.array([[last_row[col] for col in feature_cols]])
+            prediction = int(model.predict(X)[0])
+            print(f"Prediction for {symbol} is {prediction}")
+            current_position = bot.get_position(symbol)
+            price = float(last_row["Close"])
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if prediction == 1:
+                if current_position == 0:
+                    print("Bullish signal. Buying one share.")
+                    bot.place_order(symbol, qty=1, side="buy")
+                    trade_history.append({"timestamp": timestamp, "action": "BUY", "qty": 1, "price": price, "symbol": symbol})
+                else:
+                    print("Bullish signal but already in position.")
+            else:
+                if current_position > 0:
+                    print("Bearish signal. Selling all shares.")
+                    bot.place_order(symbol, qty=current_position, side="sell")
+                    trade_history.append({"timestamp": timestamp, "action": "SELL", "qty": current_position, "price": price, "symbol": symbol})
+                else:
+                    print("Bearish signal but no position.")
+            account = bot.get_account()
+            account_history.append({"timestamp": datetime.now().strftime("%H:%M:%S"),
+                                    "equity": float(account.equity),
+                                    "cash": float(account.cash),
+                                    "portfolio_value": float(account.portfolio_value)})
+        except Exception as e:
+            print("Error in live trading loop:", e)
+        time.sleep(sleep_interval)
+    print("Live trading loop stopped.")
+
+# ----------------------------
+# Flask Application and Routes
+# ----------------------------
+app = Flask(__name__)
+
+@app.route("/")
+def index():
+    return redirect(url_for("dashboard"))
+
+@app.route("/dashboard")
+def dashboard():
+    return render_template("dashboard.html")
+
+@app.route("/train_model_parameters")
+def train_model_parameters():
+    available_indicators = ["SMA", "EMA", "RSI", "MACD", "ATR", "CCI", "ADX", "OBV", "STOCH"]
+    operators = [">", "<", ">=", "<=", "="]
+    supported_note = "Indicators computed via ta: SMA, EMA, RSI, MACD, ATR, CCI, ADX, OBV, STOCH."
+    return render_template("train_model_parameters.html",
+                           available_indicators=available_indicators,
+                           operators=operators,
+                           supported_note=supported_note)
+
+@app.route("/train_model_custom", methods=["POST"])
+def train_model_custom_route():
+    buy_conditions = []
+    sell_conditions = []
+    # Process buy conditions in order based on numeric suffix.
+    buy_keys = sorted([key for key in request.form if key.startswith("buy_indicator_")],
+                      key=lambda k: int(k.split("_")[1]))
+    for key in buy_keys:
+        suffix = key.split("_")[1]
+        ind = request.form.get(f"buy_indicator_{suffix}", "").strip()
+        period = request.form.get(f"buy_period_{suffix}", "").strip()
+        op = request.form.get(f"buy_operator_{suffix}", "").strip()
+        thr = request.form.get(f"buy_threshold_{suffix}", "").strip()
+        if ind and period and op and thr:
+            try:
+                period_val = int(period)
+            except ValueError:
+                continue
+            buy_conditions.append((ind.upper(), period_val, op, thr))
+    sell_keys = sorted([key for key in request.form if key.startswith("sell_indicator_")],
+                       key=lambda k: int(k.split("_")[1]))
+    for key in sell_keys:
+        suffix = key.split("_")[1]
+        ind = request.form.get(f"sell_indicator_{suffix}", "").strip()
+        period = request.form.get(f"sell_period_{suffix}", "").strip()
+        op = request.form.get(f"sell_operator_{suffix}", "").strip()
+        thr = request.form.get(f"sell_threshold_{suffix}", "").strip()
+        if ind and period and op and thr:
+            try:
+                period_val = int(period)
+            except ValueError:
+                continue
+            sell_conditions.append((ind.upper(), period_val, op, thr))
+    model_name = request.form.get("model_name", "Custom").strip()
+    if not buy_conditions or not sell_conditions:
+        message = "You must provide at least one condition for both BUY and SELL actions."
+        return render_template("message.html", message=message)
+    try:
+        train_custom_model(buy_conditions, sell_conditions, model_name=model_name)
+        message = f"Custom model '{model_name}' successfully trained using your parameters."
+    except Exception as e:
+        message = f"Error training custom model: {e}"
+    return render_template("message.html", message=message)
+
+@app.route("/backtest_chart", methods=["GET", "POST"])
+def backtest_chart_route():
+    available_models = get_available_models()
+    tickers = get_sp500_tickers()
+    if request.method == "POST":
+        selected_model = request.form.get("model", "Custom").strip()
+        symbol = request.form.get("symbol", "").upper()
+    else:
+        selected_model = request.args.get("model", "Custom").strip()
+        symbol = request.args.get("symbol", "").upper()
+    if not selected_model:
+        selected_model = "Custom"
+    if symbol == "":
+        return render_template("backtest_chart.html",
+                               available_models=available_models,
+                               selected_model=selected_model,
+                               tickers=tickers,
+                               symbol=None)
+    else:
+        df, actions = backtest_model(symbol, selected_model)
+        start_date = df["Date"].iloc[0].strftime("%Y-%m-%d")
+        end_date = df["Date"].iloc[-1].strftime("%Y-%m-%d")
+        portfolio_dates = df["Date"].dt.strftime("%Y-%m-%d").tolist()
+        portfolio_values = df["Portfolio Value"].tolist()
+        return render_template("backtest_chart.html",
+                               available_models=available_models,
+                               selected_model=selected_model,
+                               tickers=tickers,
+                               symbol=symbol,
+                               start_date=start_date,
+                               end_date=end_date,
+                               portfolio_dates=portfolio_dates,
+                               portfolio_values=portfolio_values,
+                               actions=actions)
+
+@app.route("/live_trading_dashboard", methods=["GET", "POST"])
+def live_trading_dashboard():
+    symbol = ""
+    if request.method == "POST":
+        symbol = request.form.get("symbol", "").upper()
+    else:
+        symbol = request.args.get("symbol", "").upper()
+    if symbol == "":
+        return render_template("live_trading_dashboard.html", symbol=None)
+    bot = AlpacaBot()
+    try:
+        account = bot.get_account()
+        account_info = {
+            "Equity": account.equity,
+            "Cash": account.cash,
+            "Buying Power": account.buying_power,
+            "Portfolio Value": account.portfolio_value,
+            "Status": account.status
+        }
+        error_msg = None
+    except Exception as e:
+        account_info = None
+        error_msg = f"Error retrieving account info: {e}"
+    trading_running = live_trading_thread is not None and live_trading_thread.is_alive()
+    profit_loss = None
+    if initial_equity is not None:
+        try:
+            current_equity = float(account.equity)
+            profit_loss = ((current_equity - initial_equity) / initial_equity) * 100
+        except Exception:
+            profit_loss = None
+    return render_template("live_trading_dashboard.html",
+                           symbol=symbol,
+                           account_info=account_info,
+                           error_msg=error_msg,
+                           trading_running=trading_running,
+                           account_history=account_history,
+                           profit_loss=profit_loss,
+                           trade_history=trade_history)
+
+@app.route("/start_live_trading")
+def start_live_trading_route():
+    global live_trading_thread, trading_stop_event
+    symbol = request.args.get("symbol", "").upper()
+    if symbol == "":
+        return redirect(url_for("live_trading_dashboard"))
+    if live_trading_thread is None or not live_trading_thread.is_alive():
+        trading_stop_event.clear()
+        live_trading_thread = threading.Thread(target=live_trading_loop, args=(symbol,), daemon=True)
+        live_trading_thread.start()
+    return redirect(url_for("live_trading_dashboard", symbol=symbol))
+
+@app.route("/stop_live_trading")
+def stop_live_trading_route():
+    global trading_stop_event
+    if live_trading_thread is not None and live_trading_thread.is_alive():
+        trading_stop_event.set()
+    symbol = request.args.get("symbol", "").upper()
+    return redirect(url_for("live_trading_dashboard", symbol=symbol))
+
+@app.route("/message")
+def message():
+    msg = request.args.get("msg", "No message provided.")
+    return render_template("message.html", message=msg)
+
+if __name__ == "__main__":
+    app.run(debug=True)
