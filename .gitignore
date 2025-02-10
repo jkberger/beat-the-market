@@ -3,3 +3,5 @@ keys/
 venv/
 env/
 .env
+__pycache__/
+utils/__pycache__/

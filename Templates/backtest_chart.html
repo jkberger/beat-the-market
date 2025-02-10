@@ -14,8 +14,15 @@
   </nav>
   <div class="container mt-4">
     <h2>Backtest Results</h2>
-    <!-- Stock selection form -->
     <form method="POST" action="/backtest_chart">
+      <div class="mb-3">
+        <label for="model" class="form-label">Select Model:</label>
+        <select class="form-select" id="model" name="model">
+          {% for m in available_models %}
+            <option value="{{ m }}" {% if m == selected_model %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <div class="mb-3">
         <label for="symbol" class="form-label">Select Stock:</label>
         <select class="form-select" id="symbol" name="symbol">
@@ -29,30 +36,66 @@
     </form>
     {% if symbol %}
       <p>Date Range: {{ start_date }} to {{ end_date }}</p>
-      <div id="chart" style="width:100%;height:500px;"></div>
+      <div id="portfolioChart" style="width:100%;height:500px;"></div>
+      <div id="actionChart" style="width:100%;height:500px; margin-top: 50px;"></div>
       <script>
+        // Portfolio Value Chart
         var portfolioDates = {{ portfolio_dates|tojson }};
         var portfolioValues = {{ portfolio_values|tojson }};
-        
-        var trace = {
+        var tracePortfolio = {
           x: portfolioDates,
           y: portfolioValues,
           mode: 'lines',
           name: 'Portfolio Value',
           line: {color: 'green'}
         };
-        
-        var data = [trace];
-        var layout = {
-          title: 'Backtest Portfolio Value Over Time',
+        var dataPortfolio = [tracePortfolio];
+        var layoutPortfolio = {
+          title: 'Portfolio Value Over Time',
           xaxis: { title: 'Date' },
           yaxis: { title: 'Value ($)' }
         };
+        Plotly.newPlot('portfolioChart', dataPortfolio, layoutPortfolio);
         
-        Plotly.newPlot('chart', data, layout);
+        // Trade Actions Chart
+        var actions = {{ actions|tojson }};
+        var buyDates = [];
+        var buyPrices = [];
+        var sellDates = [];
+        var sellPrices = [];
+        actions.forEach(function(act) {
+          if(act.Action === "BUY"){
+            buyDates.push(act.Date);
+            buyPrices.push(act.Close);
+          } else if(act.Action === "SELL"){
+            sellDates.push(act.Date);
+            sellPrices.push(act.Close);
+          }
+        });
+        var traceBuy = {
+          x: buyDates,
+          y: buyPrices,
+          mode: 'markers',
+          name: 'Buy',
+          marker: { color: 'blue', size: 10, symbol: 'triangle-up' }
+        };
+        var traceSell = {
+          x: sellDates,
+          y: sellPrices,
+          mode: 'markers',
+          name: 'Sell',
+          marker: { color: 'red', size: 10, symbol: 'triangle-down' }
+        };
+        var dataActions = [traceBuy, traceSell];
+        var layoutActions = {
+          title: 'Trade Actions (Buy/Sell) with Price and Indicator Values',
+          xaxis: { title: 'Date' },
+          yaxis: { title: 'Price ($)' }
+        };
+        Plotly.newPlot('actionChart', dataActions, layoutActions);
       </script>
     {% else %}
-      <p>Please select a stock to view backtest results.</p>
+      <p>Please select a model and a stock to view backtest results.</p>
     {% endif %}
     <a href="/dashboard" class="btn btn-secondary mt-3">Back to Dashboard</a>
   </div>

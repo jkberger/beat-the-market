@@ -5,3 +5,5 @@ scikit-learn
 yfinance
 alpaca-trade-api
 python-dotenv
+ta
+cachetools
