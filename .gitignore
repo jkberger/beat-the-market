@@ -1,5 +1,6 @@
 models/
 keys/
 venv/
+env/
 __pycache__/
 utils/__pycache__/
