@@ -1,7 +1,7 @@
 # trading_app.py
 import os
 import threading
-#from dotenv import load_dotenv
+from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for
 from utils.data_fetching import get_sp500_tickers
 from utils.model_training import train_custom_model, DEFAULT_PERIODS
@@ -10,7 +10,7 @@ from utils.alpaca_bot import AlpacaBot
 from utils.live_trading import live_trading_loop, live_trading_thread, trading_stop_event, trade_history, account_history, initial_equity
 from utils.helpers import get_available_models
 
-#load_dotenv()
+load_dotenv()
 
 app = Flask(__name__)
 
