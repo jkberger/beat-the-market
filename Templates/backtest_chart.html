@@ -39,17 +39,34 @@
       <div id="portfolioChart" style="width:100%;height:500px;"></div>
       <div id="actionChart" style="width:100%;height:500px; margin-top: 50px;"></div>
       <script>
-        // Portfolio Value Chart
+        // Portfolio Value Chart with 3 traces.
         var portfolioDates = {{ portfolio_dates|tojson }};
-        var portfolioValues = {{ portfolio_values|tojson }};
-        var tracePortfolio = {
+        var modelPortfolio = {{ portfolio_values|tojson }};
+        var holdStock = {{ hold_stock|tojson }};
+        var holdSPY = {{ hold_spy|tojson }};
+        
+        var traceModel = {
           x: portfolioDates,
-          y: portfolioValues,
+          y: modelPortfolio,
           mode: 'lines',
-          name: 'Portfolio Value',
+          name: 'Model Trading',
           line: {color: 'green'}
         };
-        var dataPortfolio = [tracePortfolio];
+        var traceStock = {
+          x: portfolioDates,
+          y: holdStock,
+          mode: 'lines',
+          name: 'Buy & Hold Stock',
+          line: {color: 'blue', dash: 'dot'}
+        };
+        var traceSPY = {
+          x: portfolioDates,
+          y: holdSPY,
+          mode: 'lines',
+          name: 'Buy & Hold SPY',
+          line: {color: 'red', dash: 'dot'}
+        };
+        var dataPortfolio = [traceModel, traceStock, traceSPY];
         var layoutPortfolio = {
           title: 'Portfolio Value Over Time',
           xaxis: { title: 'Date' },
@@ -57,7 +74,7 @@
         };
         Plotly.newPlot('portfolioChart', dataPortfolio, layoutPortfolio);
         
-        // Trade Actions Chart
+        // Trade Actions Chart remains as before.
         var actions = {{ actions|tojson }};
         var buyDates = [];
         var buyPrices = [];
@@ -88,7 +105,7 @@
         };
         var dataActions = [traceBuy, traceSell];
         var layoutActions = {
-          title: 'Trade Actions (Buy/Sell) with Price and Indicator Values',
+          title: 'Trade Actions',
           xaxis: { title: 'Date' },
           yaxis: { title: 'Price ($)' }
         };
@@ -102,4 +119,3 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
-

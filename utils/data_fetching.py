@@ -1,3 +1,4 @@
+# utils/data_fetching.py
 import os
 import pandas as pd
 import yfinance as yf
@@ -5,7 +6,7 @@ from datetime import datetime
 import ta  # Technical analysis library
 from cachetools import TTLCache, cached
 
-# Create an in-memory cache that holds up to 100 items for 1 hour (3600 seconds)
+# In-memory cache: up to 100 items for 1 hour
 data_cache = TTLCache(maxsize=100, ttl=3600)
 
 def get_sp500_tickers():
@@ -20,19 +21,29 @@ def get_sp500_tickers():
         print("Error fetching S&P 500 list:", e)
         return []
 
-@cached(cache=data_cache, key=lambda symbol, start, end: f"{symbol}_{start}_{end}")
-def fetch_data(symbol, start, end):
+# Note: We include 'interval' as part of the cache key.
+@cached(cache=data_cache, key=lambda symbol, start, end, interval="5m": f"{symbol}_{start}_{end}_{interval}")
+def fetch_data(symbol, start, end, interval="5m"):
     """
-    Download daily historical data for a given ticker using yfinance.
-    Reset the index and clean column names.
+    Download historical data for a given ticker using yfinance.
+    This version checks for alternative date column names and renames them to 'Date'.
     """
-    df = yf.download(symbol, start=start, end=end, progress=False, interval="1d")
+    df = yf.download(symbol, start=start, end=end, progress=False, interval=interval)
     df.reset_index(inplace=True)
+    
+    # Check and rename alternative date columns if necessary
+    if "Datetime" in df.columns and "Date" not in df.columns:
+        df.rename(columns={"Datetime": "Date"}, inplace=True)
+    if "date" in df.columns and "Date" not in df.columns:
+        df.rename(columns={"date": "Date"}, inplace=True)
+    
+    # If columns are a MultiIndex, flatten them; otherwise, clean up column names.
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [' '.join(map(str, col)).strip() for col in df.columns.values]
     else:
         df.columns = [str(col).strip() for col in df.columns]
-    # Clean column names: if a column contains whitespace, take the first token.
+    
+    # Simplify column names: if a column equals (ignoring case) 'date', rename it to 'Date'
     cleaned_columns = []
     for col in df.columns:
         if col.lower() == "date":
@@ -40,17 +51,24 @@ def fetch_data(symbol, start, end):
         else:
             cleaned_columns.append(col.split()[0])
     df.columns = cleaned_columns
-    print(f"Ticker {symbol} cleaned columns: {df.columns.tolist()}")
+    
+    # Remove any duplicate columns
+    df = df.loc[:, ~df.columns.duplicated()]
+    
+    # Ensure the 'Date' column exists
     if "Date" not in df.columns:
         raise ValueError(f"Ticker {symbol}: 'Date' column not found.")
-    df['Date'] = pd.to_datetime(df['Date'])
+    
+    # Convert 'Date' column to datetime
+    df["Date"] = pd.to_datetime(df["Date"])
     return df
 
 def prepare_base_data(df):
     """
-    Prepare raw data for custom model training.
-    - Ensure essential columns ('Date', 'Close', etc.) are present.
-    - Flatten any multi-dimensional columns.
+    Prepare raw data for model training:
+      - Clean column names
+      - Ensure essential columns (Date, Close, High, Low, Volume) exist
+      - Flatten any multi-dimensional columns.
     """
     df = df.copy()
     if isinstance(df.columns, pd.MultiIndex):
@@ -61,7 +79,7 @@ def prepare_base_data(df):
     df.columns = [col.split()[0] for col in df.columns]
     df = df.loc[:, ~df.columns.duplicated()]
     
-    # List of columns we care about
+    # Flatten columns if necessary
     cols_to_check = ["Date", "Close", "Adj", "High", "Low", "Volume"]
     for col in cols_to_check:
         if col in df.columns and isinstance(df[col], pd.DataFrame):
@@ -79,11 +97,10 @@ def prepare_base_data(df):
     df = df.sort_values("Date")
     return df
 
-# Helper for computing STOCH so that we always get a 1D Series.
+# Helper for computing STOCH so that we always return a 1D Series.
 def compute_stoch(df, period):
     """
-    Computes the Stochastic Oscillator (%K) for the given DataFrame and period.
-    If the ta function returns a DataFrame, selects the first column.
+    Compute the Stochastic Oscillator (%K) as a 1D Series.
     """
     result = ta.momentum.stoch(
         high=df["High"],
@@ -92,13 +109,11 @@ def compute_stoch(df, period):
         window=period,
         smooth_window=3
     )
-    # If result is a DataFrame (or has more than one column), select the first column
     if isinstance(result, pd.DataFrame):
         return result.iloc[:, 0]
-    # Also, if result is a numpy array with more than one dimension, squeeze it.
     return pd.Series(result).squeeze()
 
-# Technical Indicator Functions using ta
+# Technical Indicator Functions with default intraday-friendly values
 indicator_functions = {
     "SMA": lambda df, period: ta.trend.sma_indicator(df["Close"], window=period),
     "EMA": lambda df, period: ta.trend.ema_indicator(df["Close"], window=period),
