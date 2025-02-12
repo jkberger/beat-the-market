@@ -6,6 +6,21 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     .condition-row { margin-bottom: 10px; }
+    /* The overlay to block input and show the spinner */
+    #overlay {
+      display: none; /* Hidden by default */
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.8);
+      z-index: 9999;
+      text-align: center;
+      padding-top: 20%;
+      font-size: 1.5em;
+      color: #007bff;
+    }
   </style>
 </head>
 <body>
@@ -14,16 +29,34 @@
       <a class="navbar-brand" href="/dashboard">Trading App Dashboard</a>
     </div>
   </nav>
-  <div class="container mt-4">
+  <div class="container mt-4" id="formContainer">
     <h2>Custom Model Training Parameters</h2>
     <p>
       Define your indicator conditions for BUY and SELL actions. A row is labeled as BUY only if all BUY conditions are met and none of the SELL conditions are met, and vice versa. Then name your custom model.
     </p>
     <p><em>{{ supported_note }}</em></p>
-    <form method="POST" action="/train_model_custom" id="customForm">
+    <!-- Update the form's onsubmit to call our handler -->
+    <form method="POST" action="/train_model_custom" id="customForm" onsubmit="handleFormSubmit(event);">
       <div class="mb-3">
         <label for="model_name" class="form-label">Model Name:</label>
         <input type="text" class="form-control" id="model_name" name="model_name" placeholder="e.g., MyAlphaModel">
+      </div>
+      <!-- Training Algorithm Selection -->
+      <div class="mb-3">
+        <label for="training_type" class="form-label">Training Algorithm:</label>
+        <select class="form-select" id="training_type" name="training_type">
+          <option value="standard" selected>Standard</option>
+          <option value="tuned">Tuned</option>
+        </select>
+      </div>
+      <!-- Model Type (only shown if Tuned is selected) -->
+      <div class="mb-3" id="model_type_div" style="display: none;">
+        <label for="model_type" class="form-label">Model Type:</label>
+        <select class="form-select" id="model_type" name="model_type">
+          <option value="RandomForest">RandomForest</option>
+          <option value="GradientBoosting">GradientBoosting</option>
+          <option value="LogisticRegression">LogisticRegression</option>
+        </select>
       </div>
       <h4>Buy Conditions</h4>
       <div id="buyConditions">
@@ -91,8 +124,36 @@
     </form>
     <a href="/dashboard" class="btn btn-secondary mt-3">Back to Dashboard</a>
   </div>
+  
+  <!-- The overlay that will cover the page and show the spinner -->
+  <div id="overlay">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Training in progress...</span>
+    </div>
+    <br>
+    Training in progress... Please wait.
+  </div>
+  
   <script>
-    // Improved dynamic addition for Buy Conditions:
+    // This function shows the overlay and delays submission to ensure the spinner is visible.
+    function handleFormSubmit(event) {
+      event.preventDefault(); // Prevent the default submission
+      showOverlay();
+      // Delay submission for a minimum of 500ms so the spinner is seen
+      setTimeout(function() {
+        event.target.submit();
+      }, 500);
+    }
+
+    // Show the overlay (spinner)
+    function showOverlay() {
+      document.getElementById('overlay').style.display = 'block';
+    }
+    
+    // Replace the onsubmit inline with our new handler
+    document.getElementById("customForm").addEventListener("submit", handleFormSubmit);
+    
+    // Add additional Buy condition rows
     let buyCount = 1;
     document.getElementById("addBuy").addEventListener("click", function() {
       buyCount++;
@@ -101,26 +162,24 @@
       newRow.id = "buyCondition_" + buyCount;
       let elems = newRow.querySelectorAll("select, input");
       elems.forEach(function(elem) {
-          let origName = elem.getAttribute("name"); // e.g., "buy_indicator_1"
-          if(origName) {
+          let origName = elem.getAttribute("name");
+          if (origName) {
               let parts = origName.split("_");
-              // Rejoin all parts except the last one
               let prefix = parts.slice(0, parts.length - 1).join("_");
               elem.setAttribute("name", prefix + "_" + buyCount);
           }
           let origId = elem.getAttribute("id");
-          if(origId) {
+          if (origId) {
               let parts = origId.split("_");
               let prefix = parts.slice(0, parts.length - 1).join("_");
               elem.setAttribute("id", prefix + "_" + buyCount);
           }
-          // Clear value
           elem.value = "";
       });
       document.getElementById("buyConditions").appendChild(newRow);
     });
     
-    // Improved dynamic addition for Sell Conditions:
+    // Add additional Sell condition rows
     let sellCount = 1;
     document.getElementById("addSell").addEventListener("click", function() {
       sellCount++;
@@ -129,14 +188,14 @@
       newRow.id = "sellCondition_" + sellCount;
       let elems = newRow.querySelectorAll("select, input");
       elems.forEach(function(elem) {
-          let origName = elem.getAttribute("name"); // e.g., "sell_indicator_1"
-          if(origName) {
+          let origName = elem.getAttribute("name");
+          if (origName) {
               let parts = origName.split("_");
               let prefix = parts.slice(0, parts.length - 1).join("_");
               elem.setAttribute("name", prefix + "_" + sellCount);
           }
           let origId = elem.getAttribute("id");
-          if(origId) {
+          if (origId) {
               let parts = origId.split("_");
               let prefix = parts.slice(0, parts.length - 1).join("_");
               elem.setAttribute("id", prefix + "_" + sellCount);
@@ -144,6 +203,15 @@
           elem.value = "";
       });
       document.getElementById("sellConditions").appendChild(newRow);
+    });
+
+    // Show/hide Model Type based on Training Type selection
+    document.getElementById("training_type").addEventListener("change", function() {
+      if (this.value === "tuned") {
+          document.getElementById("model_type_div").style.display = "block";
+      } else {
+          document.getElementById("model_type_div").style.display = "none";
+      }
     });
   </script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
