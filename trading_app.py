@@ -1,6 +1,6 @@
 import os
 import threading
-#from dotenv import load_dotenv
+from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for
 from utils.data_fetching import get_sp500_tickers
 from utils.model_training import train_custom_model, train_model_with_tuning, DEFAULT_PERIODS
@@ -10,7 +10,7 @@ from utils.live_trading import live_trading_loop, live_trading_thread, trading_s
 from utils.helpers import get_available_models
 import json
 
-#load_dotenv()
+load_dotenv()
 
 app = Flask(__name__)
 
