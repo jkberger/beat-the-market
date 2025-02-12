@@ -1,4 +1,5 @@
 # utils/model_training.py
+
 import os
 import pickle
 from datetime import datetime, timedelta
@@ -10,7 +11,6 @@ import concurrent.futures
 from utils.data_fetching import get_sp500_tickers, fetch_data, prepare_base_data, indicator_functions
 
 def check_condition(row, col_name, op, threshold):
-    """Return True if the value in row[col_name] meets the condition op threshold; otherwise, False."""
     try:
         value = float(row[col_name])
     except Exception:
@@ -32,14 +32,28 @@ def check_condition(row, col_name, op, threshold):
     else:
         return False
 
-def train_custom_model(buy_conditions, sell_conditions, model_name="Custom"):
+DEFAULT_PERIODS = {
+    "SMA": 20,
+    "EMA": 20,
+    "RSI": 14,
+    "MACD": 12,
+    "ATR": 14,
+    "CCI": 20,
+    "ADX": 14,
+    "OBV": 14,
+    "STOCH": 14
+}
+
+def train_custom_model(buy_conditions, sell_conditions, model_name="Custom", interval="5m"):
     """
-    Train a custom model using user-defined conditions.
-    Processes each ticker in parallel to improve performance.
+    Train a custom model using intraday data (default interval 5m).
+    Uses the last 59 days of data.
+    Expects buy_conditions and sell_conditions to be lists of tuples:
+        (indicator, period, operator, threshold)
     """
     tickers = get_sp500_tickers()
-    end = datetime.today().date()
-    start = end - timedelta(days=365 * 2)
+    end = datetime.today()
+    start = end - timedelta(days=59)
     required_features = {"Close"}
     for cond in buy_conditions + sell_conditions:
         indicator, period, op, thr = cond
@@ -47,70 +61,103 @@ def train_custom_model(buy_conditions, sell_conditions, model_name="Custom"):
     
     def process_ticker(ticker):
         try:
-            df = fetch_data(ticker, start, end)
-            df = prepare_base_data(df)
-            if df.empty:
-                print(f"{ticker}: No data after preparing base data. Skipping.")
-                return None
-            if "Close" not in df.columns:
-                print(f"{ticker}: 'Close' not found. Skipping.")
-                return None
-            # Compute required indicator features
-            for feat in required_features:
-                if feat == "Close":
-                    continue
-                if feat not in df.columns:
-                    try:
-                        indicator, period_str = feat.split("_")
-                        period = int(period_str)
-                    except Exception:
-                        continue
-                    if indicator.upper() in indicator_functions:
-                        df[feat] = indicator_functions[indicator.upper()](df, period)
-                    else:
-                        print(f"{ticker}: Indicator {indicator} not supported. Skipping condition.")
-                        continue
-            df = df.dropna(subset=list(required_features))
-            if df.empty:
-                print(f"{ticker}: All rows dropped after computing required features. Skipping.")
-                return None
-            
-            # Label rows based on buy and sell conditions
-            def label_row(row):
-                buy_met = all(check_condition(row, f"{ind}_{period}", op, thr)
-                              for (ind, period, op, thr) in buy_conditions)
-                sell_met = all(check_condition(row, f"{ind}_{period}", op, thr)
-                               for (ind, period, op, thr) in sell_conditions)
-                if buy_met and not sell_met:
-                    return 1
-                elif sell_met and not buy_met:
-                    return 0
-                else:
-                    return None
-            df["CustomLabel"] = df.apply(label_row, axis=1)
-            df = df.dropna(subset=["CustomLabel"])
-            if df.empty:
-                print(f"{ticker}: No rows met custom conditions. Skipping.")
-                return None
-            df["CustomLabel"] = df["CustomLabel"].astype(int)
-            df["Ticker"] = ticker
-            print(f"{ticker}: Collected {len(df)} custom-labeled rows.")
-            return df
+            df = fetch_data(ticker, start, end, interval=interval)
         except Exception as e:
-            print(f"Error processing {ticker}: {e}")
+            print(f"Failed to fetch data for {ticker}: {e}")
+            return None
+        try:
+            df = prepare_base_data(df)
+        except Exception as e:
+            print(f"Error preparing data for {ticker}: {e}")
+            return None
+        
+        if df.empty or "Close" not in df.columns:
+            print(f"{ticker}: insufficient data. Skipping.")
+            return None
+        
+        for feat in required_features:
+            if feat == "Close":
+                continue
+            if feat not in df.columns:
+                try:
+                    indicator, period_str = feat.split("_")
+                    period = int(period_str)
+                except Exception:
+                    continue
+                if indicator.upper() in indicator_functions:
+                    try:
+                        df[feat] = indicator_functions[indicator.upper()](df, period)
+                    except Exception as e:
+                        print(f"Error computing {feat} for {ticker}: {e}")
+                        continue
+        df = df.dropna(subset=list(required_features))
+        if df.empty:
+            print(f"{ticker}: All rows dropped. Skipping.")
             return None
 
-    # Use a ThreadPoolExecutor to process tickers in parallel
+        def label_row(row):
+            buy_details = []
+            for (ind, period, op, thr) in buy_conditions:
+                col = f"{ind}_{period}"
+                value = row[col] if col in row else None
+                cond_met = check_condition(row, col, op, thr)
+                buy_details.append((ind, period, value, op, thr, cond_met))
+            sell_details = []
+            for (ind, period, op, thr) in sell_conditions:
+                col = f"{ind}_{period}"
+                value = row[col] if col in row else None
+                cond_met = check_condition(row, col, op, thr)
+                sell_details.append((ind, period, value, op, thr, cond_met))
+            
+            print(f"Ticker {ticker} | Date: {row['Date']}")
+            print(f"  Buy details: {buy_details}")
+            print(f"  Sell details: {sell_details}")
+            
+            buy_flags = [detail[5] for detail in buy_details]
+            sell_flags = [detail[5] for detail in sell_details]
+            
+            if buy_flags and (any(buy_flags) and not all(buy_flags)):
+                print(f"  Partial Buy Conditions met: {buy_details}")
+            if sell_flags and (any(sell_flags) and not all(sell_flags)):
+                print(f"  Partial Sell Conditions met: {sell_details}")
+            
+            if buy_flags and sell_flags:
+                if all(buy_flags) and not any(sell_flags):
+                    final_decision = 1
+                elif all(sell_flags) and not any(buy_flags):
+                    final_decision = 0
+                else:
+                    final_decision = None
+            elif buy_flags:
+                final_decision = 1 if all(buy_flags) else None
+            elif sell_flags:
+                final_decision = 0 if all(sell_flags) else None
+            else:
+                final_decision = None
+            
+            print(f"  Final decision: {final_decision}")
+            return final_decision
+
+        df["CustomLabel"] = df.apply(label_row, axis=1)
+        count_labeled = df["CustomLabel"].notna().sum()
+        print(f"{ticker}: Number of labeled rows: {count_labeled}")
+        df = df.dropna(subset=["CustomLabel"])
+        if df.empty:
+            print(f"{ticker}: no rows met conditions. Skipping.")
+            return None
+        
+        df["CustomLabel"] = df["CustomLabel"].astype(int)
+        df["Ticker"] = ticker
+        print(f"{ticker}: Collected {len(df)} rows after labeling.")
+        return df
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         results = list(executor.map(process_ticker, tickers))
-    
     valid_dfs = [df for df in results if df is not None]
-    
     if not valid_dfs:
         raise ValueError("No valid data collected for custom training.")
-    
     combined_df = pd.concat(valid_dfs, ignore_index=True)
-    print(f"Combined custom training data shape: {combined_df.shape}")
+    print(f"Combined data shape: {combined_df.shape}")
     features_list = list(required_features)
     X = combined_df[features_list].values
     y = combined_df["CustomLabel"].values
@@ -124,7 +171,7 @@ def train_custom_model(buy_conditions, sell_conditions, model_name="Custom"):
     model_filename = f"models/{model_name}.pkl"
     with open(model_filename, "wb") as f:
         pickle.dump(model_data, f)
-    print(f"Custom model trained and saved as '{model_filename}'.")
+    print(f"Model trained and saved as '{model_filename}'.")
     return model_data, combined_df
 
 def load_custom_model(model_name="Custom"):
@@ -132,9 +179,9 @@ def load_custom_model(model_name="Custom"):
     if os.path.exists(model_file):
         with open(model_file, "rb") as f:
             model_data = pickle.load(f)
-        return model_data  # dict with keys "model" and "features"
+        return model_data
     else:
-        raise ValueError("Custom model not found. Please train the custom model first.")
+        raise ValueError("Custom model not found. Please train it first.")
 
 def load_model(model_name):
     model_data = load_custom_model(model_name)
