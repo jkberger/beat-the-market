@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from app.backtest import validation
+from app.backtest.engine import backtest
 from app.backtest.validation import (
     NotEnoughHistory,
     run_walk_forward,
@@ -13,7 +14,7 @@ from app.backtest.validation import (
     walk_forward_windows,
 )
 from app.strategy.models import BacktestConfig, RiskSettings
-from tests.strategy.helpers import rsi_strategy
+from tests.strategy.helpers import golden_cross_strategy, rsi_strategy
 
 RISK = RiskSettings(
     preset="custom", position_pct=100, stop_atr_mult=None, max_drawdown_pct=None, objective="sharpe"
@@ -96,7 +97,7 @@ def test_oos_equity_is_continuous(bars):
     assert jumps < 0.25
     assert seg.equity.index[-1] < pd.Timestamp(HOLDOUT)
     assert len(windows) >= 2
-    assert seg.metrics["num_trades"] == len(seg.trades) > 5
+    assert seg.metrics["num_trades"] == len(seg.trades) > 0
 
 
 def test_final_strategy_is_concrete(bars):
@@ -116,3 +117,44 @@ def test_holdout_uses_only_holdout_dates(bars):
 def test_split_dev(bars):
     dev = split_dev(bars, HOLDOUT)
     assert dev.index[-1] < pd.Timestamp(HOLDOUT)
+
+
+def _assert_same_run(seg, ref):
+    pd.testing.assert_series_equal(seg.equity, ref.equity, check_names=False)
+    assert [(t.entry_date, t.exit_date, t.exit_reason) for t in seg.trades] == [
+        (t.entry_date, t.exit_date, t.exit_reason) for t in ref.trades
+    ]
+
+
+@pytest.mark.parametrize("make", [rsi_strategy, golden_cross_strategy])
+def test_untuned_walk_forward_matches_one_continuous_backtest(bars, make):
+    """With nothing to tune, walk-forward must be exactly one run over the test span:
+    no position may be closed just because a six-month window ended."""
+    strat = make()
+    seg, windows, _ = run_walk_forward(strat, bars, RISK, CFG, HOLDOUT)
+    dev = split_dev(bars, HOLDOUT)
+    ref = backtest(dev, strat, RISK, CFG, start=seg.start, end=seg.end)
+    _assert_same_run(seg, ref)
+    assert all(t.exit_reason != "end" for t in seg.trades[:-1])
+
+
+def test_golden_cross_holds_across_window_boundaries(bars):
+    seg, windows, _ = run_walk_forward(golden_cross_strategy(), bars, RISK, CFG, HOLDOUT)
+    ends = [pd.Timestamp(w["window"]["test_end"]) for w in windows[:-1]]
+    spans = [(pd.Timestamp(t.entry_date), pd.Timestamp(t.exit_date)) for t in seg.trades]
+    assert any(a <= e < b for a, b in spans for e in ends)
+    assert seg.position.mean() > 0.2
+
+
+def test_tuned_window_signals_ignore_later_bars(bars):
+    """Scrambling bars after a window's end must not change that window's results."""
+    s = rsi_strategy(buy_level={"min": 25, "max": 35, "step": 5})
+    seg, windows, _ = run_walk_forward(s, bars, RISK, CFG, HOLDOUT)
+    cut = pd.Timestamp(windows[2]["window"]["test_end"])
+    noisy = bars.copy()
+    later = noisy.index > cut
+    noisy.loc[later, ["open", "high", "low", "close"]] *= 1.37
+    seg2, _, _ = run_walk_forward(s, noisy, RISK, CFG, HOLDOUT)
+    pd.testing.assert_series_equal(
+        seg.equity[seg.equity.index < cut], seg2.equity[seg2.equity.index < cut]
+    )

@@ -9,8 +9,9 @@ from typing import Literal
 
 import pandas as pd
 
-from app.backtest.engine import Trade, backtest
+from app.backtest.engine import Trade, backtest, run_engine
 from app.backtest.metrics import compute_metrics, objective_value
+from app.strategy.evaluate import signals
 from app.strategy.grid import expand_grid
 from app.strategy.models import BacktestConfig, RiskSettings, Strategy
 
@@ -137,26 +138,45 @@ def run_walk_forward(
 ) -> tuple[SegmentResult, list[dict], Strategy]:
     dev = split_dev(bars, holdout_start)
     windows = walk_forward_windows(dev.index, train_years, test_months)
-    equity_parts, position_parts, trades, info = [], [], [], []
-    capital = config.initial_equity
+    # Tune each window on its own training span, then trade the whole out-of-sample
+    # span in ONE continuous run: a position opened in one window carries into the next
+    # instead of being closed every six months. Each window's signals come from the
+    # settings tuned for it and are computed only from bars up to that window's end.
+    buy_parts, sell_parts, segments, chosen_list = [], [], [], []
     for w in windows:
         chosen, tinfo = tune(strategy, dev, risk, config, w.train_start, w.train_end)
-        run_cfg = config.model_copy(update={"initial_equity": capital})
-        r = backtest(dev, chosen, risk, run_cfg, start=w.test_start, end=w.test_end)
-        equity_parts.append(r.equity)
-        position_parts.append(r.position)
-        trades.extend(r.trades)
-        capital = float(r.equity.iloc[-1])
+        upto = dev[dev.index <= pd.Timestamp(w.test_end)]
+        b, s = signals(chosen, upto)
+        in_test = b.index >= pd.Timestamp(w.test_start)
+        buy_parts.append(b[in_test])
+        sell_parts.append(s[in_test])
+        segments.append((w.test_start, chosen))
+        chosen_list.append((chosen, tinfo))
+    oos_bars = dev[dev.index <= pd.Timestamp(windows[-1].test_end)]
+    r = run_engine(
+        oos_bars,
+        pd.concat(buy_parts),
+        pd.concat(sell_parts),
+        strategy,
+        risk,
+        config,
+        start=windows[0].test_start,
+        segments=segments,
+    )
+    equity, position, trades = r.equity, r.position, r.trades
+    info = []
+    for w, (chosen, tinfo) in zip(windows, chosen_list, strict=True):
+        lo, hi = pd.Timestamp(w.test_start), pd.Timestamp(w.test_end)
+        mask = (equity.index >= lo) & (equity.index <= hi)
+        w_trades = [t for t in trades if w.test_start <= t.exit_date <= w.test_end]
         info.append(
             {
                 "window": asdict(w),
                 "chosen": _chosen_values(strategy, chosen),
                 "qualified": tinfo["qualified"],
-                "test": compute_metrics(r.equity, r.trades, r.position),
+                "test": compute_metrics(equity[mask], w_trades, position[mask]),
             }
         )
-    equity = pd.concat(equity_parts)
-    position = pd.concat(position_parts)
     seg = SegmentResult(
         "out_of_sample",
         equity,

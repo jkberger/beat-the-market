@@ -56,7 +56,11 @@ def run_engine(
     risk: RiskSettings,
     config: BacktestConfig,
     start: date | None = None,
+    segments: list[tuple[date, Strategy]] | None = None,
 ) -> EngineResult:
+    """Run one continuous pass. `segments` (walk-forward) lists (from_date, strategy)
+    pairs in date order: the strategy whose segment holds the signal bar sets that
+    trade's stop, target, max hold and whether shorting is allowed."""
     idx = bars.index
     o = bars["open"].to_numpy(float)
     h = bars["high"].to_numpy(float)
@@ -70,9 +74,22 @@ def run_engine(
     slip = config.slippage_bps / 1e4
     frac = risk.position_pct / 100
 
-    stop_spec = strategy.stop_loss
-    if stop_spec is None and risk.stop_atr_mult is not None:
-        stop_spec = StopSpec(kind="atr", value=risk.stop_atr_mult)
+    def stop_spec_for(strat: Strategy) -> StopSpec | None:
+        if strat.stop_loss is None and risk.stop_atr_mult is not None:
+            return StopSpec(kind="atr", value=risk.stop_atr_mult)
+        return strat.stop_loss
+
+    if segments:
+        seg_starts = idx.searchsorted([pd.Timestamp(d) for d, _ in segments])
+        seg_strats = [st for _, st in segments]
+    else:
+        seg_starts, seg_strats = np.array([0]), [strategy]
+
+    def strategy_at(i: int) -> Strategy:
+        k = int(np.searchsorted(seg_starts, i, side="right")) - 1
+        return seg_strats[max(k, 0)]
+
+    entry_strategy = strategy_at(first)
 
     cash = config.initial_equity
     shares = 0.0
@@ -106,15 +123,16 @@ def run_engine(
         shares, pos, stop, target = 0.0, 0, None, None
 
     def open_position(i: int, direction: int):
-        nonlocal cash, shares, pos, entry_price, entry_idx, stop, target
+        nonlocal cash, shares, pos, entry_price, entry_idx, stop, target, entry_strategy
         price = o[i] * (1 + slip * direction)
         invest = cash * frac
         shares = direction * invest / price
         cash -= shares * price
         pos, entry_price, entry_idx = direction, price, i
         a = atr[signal_idx]
-        stop = _level(stop_spec, price, a, direction, -1)
-        target = _level(strategy.take_profit, price, a, direction, +1)
+        entry_strategy = strategy_at(signal_idx)
+        stop = _level(stop_spec_for(entry_strategy), price, a, direction, -1)
+        target = _level(entry_strategy.take_profit, price, a, direction, +1)
 
     for i in range(first, n):
         # 1. Fill orders decided at the previous close, at this bar's open.
@@ -146,7 +164,9 @@ def run_engine(
             break
 
         # 4. Decide orders for the next open.
-        if pos != 0 and strategy.max_hold_bars and i - entry_idx + 1 >= strategy.max_hold_bars:
+        current = strategy_at(i)
+        max_hold = entry_strategy.max_hold_bars
+        if pos != 0 and max_hold and i - entry_idx + 1 >= max_hold:
             pending_exit = "max_hold"
         if (
             pos != 0
@@ -162,11 +182,11 @@ def run_engine(
         if pos == 0:
             if b[i] and not s[i] and can_enter:
                 pending_entry = 1
-            elif s[i] and not b[i] and strategy.allow_short and can_enter:
+            elif s[i] and not b[i] and current.allow_short and can_enter:
                 pending_entry = -1
         elif pos == 1 and s[i]:
             pending_exit = "signal"
-            if strategy.allow_short and not b[i] and can_enter:
+            if current.allow_short and not b[i] and can_enter:
                 pending_entry = -1
         elif pos == -1 and b[i]:
             pending_exit = "signal"
