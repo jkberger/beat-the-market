@@ -9,14 +9,14 @@ Beat The Market becomes a trading research app. A trader picks indicators from a
 
 The first users are Jason and his brother, testing and playing with it. If it gets good enough, it may open to friends, family and paying customers, so the design keeps that path open without building it now.
 
-The one quality that matters most is **honesty**. Every number the app shows must come from data the strategy or model never saw while it was built, after trading costs, next to a buy-and-hold baseline. A result that says "this does not beat buy-and-hold" is a correct, useful result. The app never promises to beat the market.
+The one quality that matters most is **honesty**. Every number the app shows must come from data the strategy or model never saw while it was built, next to a buy-and-hold baseline. A result that says "this does not beat buy-and-hold" is a correct, useful result. The app never promises to beat the market.
 
 ## 2. Why a rebuild
 
 The current Flask app (about 1.7k lines, idle since February 2025) has problems that can't be patched:
 
 - The model's labels come from the user's own rules on the same bar as the features, so it re-learns the rule and predicts nothing about future prices.
-- The backtest runs on the same window the model trained on, with no costs.
+- The backtest runs on the same window the model trained on, so its results look better than they really are.
 - Live Alpaca trading always loads the "Custom" model, uses stale cached data and never updates starting equity.
 - The `Templates/` folder casing breaks on Linux. There are no tests or CI.
 
@@ -28,7 +28,8 @@ The old code is removed in phase 1; git history keeps it.
 - One command to start it locally, and a free hosting path.
 - A polished, inviting UI that feels like a modern trading app.
 - A large indicator library and a rule builder that combines indicators.
-- An honest backtester: next-bar execution, costs, walk-forward validation, a locked final holdout, baselines.
+- An honest backtester that trades in and out repeatedly on buy and sell signals: next-bar execution, walk-forward validation, a locked final holdout, baselines.
+- A risk tolerance control that shapes both testing and tuning.
 - Combo mining across a basket of popular stocks (phase 2).
 - A per-stock outlook and 3 to 5 suggested stock or options strategies (phase 3).
 - Paper trading through a broker API (phase 4).
@@ -42,7 +43,6 @@ The old code is removed in phase 1; git history keeps it.
 **Anti-goals: it fails even if it "works" when**
 - any shown result uses data the strategy was tuned or trained on, without saying so;
 - any calculation uses information from the future (lookahead);
-- costs are hidden or left out;
 - the UI implies a guaranteed or expected edge over the market.
 
 ## 4. Constraints
@@ -66,7 +66,7 @@ frontend/  React + TypeScript (Vite)  ──HTTP/JSON──▶  backend/  FastAP
                                                          ├─ data/        providers + local cache
                                                          ├─ indicators/  registry of indicators
                                                          ├─ strategy/    rule model + evaluator
-                                                         ├─ backtest/    engine, costs, metrics, validation
+                                                         ├─ backtest/    engine, risk settings, metrics, validation
                                                          ├─ mining/      (phase 2)
                                                          ├─ outlook/     (phase 3) forecast + options strategies
                                                          └─ broker/      (phase 4) paper trading adapter
@@ -105,12 +105,23 @@ frontend/  React + TypeScript (Vite)  ──HTTP/JSON──▶  backend/  FastAP
 
 A strategy is a saved JSON document:
 
-- **Entry rule** and **exit rule**, each a tree of conditions joined by AND or OR.
+- A **buy rule** and a **sell rule**, each a tree of conditions joined by AND or OR. Both are first-class: the sell rule is designed and tuned just like the buy rule, not an afterthought.
 - A **condition** compares two operands with one of: `>`, `<`, `crosses above`, `crosses below`, `is rising for N bars`, `is falling for N bars`. An operand is an indicator output (with parameters), price (open, high, low, close), or a constant.
 - Optional **stop loss** and **take profit** as a percentage or a multiple of ATR, and an optional **max holding period** in bars.
-- **Direction:** long-only in phase 1. Short selling is a later option.
-- **Position sizing:** all-in (100% of equity) in phase 1; fixed fraction is a later option.
-- **Tunable parameters (Claude's call):** any numeric parameter (an indicator period, a threshold, a stop size) can be fixed or marked as a range with a step, for example RSI period 7 to 21 step 7. At most 3 parameters can be ranges in phase 1, capped at 200 combinations. Tuning is a grid search whose objective is Sharpe ratio after costs, with a minimum of 5 trades per training window so a rule that barely trades can't win.
+- **Repeated trading, not buy-and-hold (Jason's requirement):** the strategy goes in and out of the stock as many times as its signals say. Starting in cash, a buy signal opens a position; a sell signal (or a stop, target or max holding period) closes it and returns to cash; the next buy signal opens a new position, and so on. A typical 10-year test produces dozens to hundreds of round trips, each listed in the trade log and marked on the chart. The point is to find the indicators and rules that time buys and sells best, and compare that against simply holding the stock.
+- **Direction:** long-only by default (a sell signal means "get out to cash"). A **"short on sell signals"** toggle makes a sell signal also open a short position, so the strategy can profit from drops too. It is off by default because many app accounts can't short.
+- **Position size:** set by the risk tolerance control below (a percentage of equity per trade, 100% at the aggressive end).
+- **Risk tolerance control (Jason's requirement):** a slider with three presets, Conservative, Balanced and Aggressive, plus a custom mode to edit each value. It applies to both testing and tuning:
+
+  | | Conservative | Balanced | Aggressive |
+  |---|---|---|---|
+  | Position size (% of equity) | 25% | 50% | 100% |
+  | Stop loss | 2 × ATR | 3 × ATR | none |
+  | Max drawdown before the strategy stands aside for 20 bars | 10% | 20% | none |
+  | Tuning objective | Sortino, penalizing drawdown | Sharpe | Total return (CAGR) |
+
+  The defaults in this table are Claude's call and can be edited. Results always show which risk setting produced them.
+- **Tunable parameters (Claude's call):** any numeric parameter (an indicator period, a threshold, a stop size) can be fixed or marked as a range with a step, for example RSI period 7 to 21 step 7. At most 3 parameters can be ranges in phase 1, capped at 200 combinations. Tuning is a grid search whose objective comes from the risk tolerance setting (see above), with a minimum of 5 trades per training window so a rule that barely trades can't win.
 - **One stock per backtest (Claude's call):** a backtest runs one strategy on one stock. Picking several stocks runs the same strategy on each and shows a comparison table (per-stock metrics plus median across stocks). Portfolio backtests across tickers are a later option.
 
 The UI builds these with dropdowns ("RSI(14) crosses above 30 AND close > SMA(200)") and shows a plain-English sentence of the rule.
@@ -118,9 +129,9 @@ The UI builds these with dropdowns ("RSI(14) crosses above 30 AND close > SMA(20
 ## 10. Backtest engine
 
 - **No lookahead:** a signal is computed from a bar's close and filled at the **next bar's open**. Stops and targets are checked against the next bars' high and low, assuming the worse case if both are hit on the same bar.
-- **Costs**, all editable, with defaults: commission $0, slippage 5 basis points per side, plus half the typical spread (another 2 basis points per side for large caps). Costs are always on by default.
+- **Costs (Jason's decision): off by default.** Commission is $0, matching today's commission-free apps, and fills happen at the actual next-day open price. An optional "slippage" setting (in basis points per trade) is available for anyone who wants a stricter test, especially for fast-trading strategies, but it starts at 0.
 - **Outputs:** equity curve, trade list (entry and exit date and price, return, holding days), and metrics: total return, CAGR, annualized volatility, Sharpe, Sortino, max drawdown, Calmar, win rate, average win and loss, profit factor, number of trades, time in market.
-- **Baselines on every result:** buy-and-hold of the same stock, and buy-and-hold of SPY, over the same dates with the same costs on entry.
+- **Baselines on every result:** buy-and-hold of the same stock, and buy-and-hold of SPY, over the same dates, so every result answers "did trading in and out beat just holding?"
 - Engine is vectorized over the data where possible and must backtest 20 years of daily bars for one stock in under one second.
 
 ## 11. Validation: walk-forward plus a locked holdout
@@ -130,7 +141,7 @@ This is the core of being honest, and it applies to anything that is tuned (stra
 1. **Split off the final holdout first.** The holdout is a **fixed start date** shared by the whole app (Claude's call), not "the latest 20%", so new daily data never leaks old holdout days into training. On first run it is set to 2 years before that day and stored in the settings table; everything from that date onward is holdout for every strategy, every stock, mining and the outlook model. It is never used while choosing parameters, combos or models. Moving it forward is a deliberate settings action that the UI warns about.
 2. **Walk-forward on the rest.** Rolling windows: tune on a training window (default 3 years), then test on the next window (default 6 months), roll forward by the test length and repeat. The stitched-together test windows form the **out-of-sample** result. Parameters are chosen using only each window's training data.
 3. **Score the holdout once** with the final chosen settings. The app shows it as a separate, clearly labeled "Holdout (never seen)" result, and records how many times the holdout has been scored for a given strategy. A strategy's identity for this count is its rule structure (indicators, conditions, joins), ignoring parameter values, so tweaking a number and re-scoring still adds to the same count. Re-scoring after changes is allowed but the count is shown, because peeking repeatedly turns the holdout into training data.
-4. **Untuned strategies:** if the user just runs fixed rules without tuning, a plain backtest over any range is honest, and the app shows it without the walk-forward steps but still with costs and baselines.
+4. **Untuned strategies:** if the user just runs fixed rules without tuning, a plain backtest over any range is honest, and the app shows it without the walk-forward steps but still with baselines.
 5. **Labels:** every chart and metric is tagged "in-sample", "out-of-sample (walk-forward)" or "holdout". In-sample numbers are only shown for diagnostics and are visually de-emphasized.
 
 ## 12. UI
@@ -141,7 +152,7 @@ Phase 1 screens:
 
 - **Home / dashboard:** quick-pick tickers, a search box, recent backtests, saved strategies.
 - **Stock page:** price chart (candles, volume) with chosen indicators overlaid; key stats; buttons to backtest or (phase 3) get suggestions.
-- **Strategy builder:** indicator picker by category, condition rows for entry and exit, stops, costs, date range, validation mode (simple or walk-forward plus holdout), and a live plain-English summary.
+- **Strategy builder:** indicator picker by category, condition rows for buy and sell signals, the risk tolerance control, the short-on-sell toggle, optional slippage, date range, validation mode (simple or walk-forward plus holdout), and a live plain-English summary.
 - **Backtest results:** equity curve against both baselines, drawdown chart, price chart with buy and sell markers, metrics table with labeled sections, trade list. Results can be saved and compared side by side.
 
 ```
@@ -183,7 +194,7 @@ A short, non-alarming disclaimer sits in the footer: research tool, not financia
 
 ## 16. Testing
 
-- Unit tests for every indicator (reference values plus the lookahead check), the rule evaluator, costs, metrics and validation splits.
+- Unit tests for every indicator (reference values plus the lookahead check), the rule evaluator, repeated entry and exit handling, risk settings, metrics and validation splits.
 - A **lookahead canary** test: a strategy given access to tomorrow's return would score impossibly well; the engine must make that impossible by construction (the test feeds a rule built on a future-shifted series through the public API and asserts it is rejected or yields no edge).
 - Golden backtests: small hand-computed datasets with known trades and returns.
 - API tests with FastAPI's test client; data provider tests use recorded fixtures, never live network.
