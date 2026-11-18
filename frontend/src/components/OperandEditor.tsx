@@ -30,8 +30,8 @@ export function OperandEditor({ value, onChange, indicators, side, allowConstant
   const spec = value.kind === "indicator" ? indicators.find((i) => i.id === value.id) : undefined;
 
   return (
-    <span className="inline-flex flex-wrap items-center gap-1.5">
-      <Select aria-label={`${side} operand`} value={encode(value)} onChange={(e) => pick(e.target.value)} className="h-8 text-sm">
+    <span className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
+      <Select aria-label={`${side} operand`} value={encode(value)} onChange={(e) => pick(e.target.value)} className="h-8 w-full min-w-0 max-w-full text-sm sm:w-auto">
         <optgroup label="Price">
           {PRICE.map((f) => (
             <option key={f} value={`price:${f}`}>

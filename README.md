@@ -25,6 +25,10 @@ Open http://localhost:8000.
 
 Open http://localhost:5173. The API runs on :8000 and both reload when you edit code.
 
+**On your phone:** start it with `./dev.sh --phone` (or `.\dev.ps1 -Phone`) and open the
+"On your phone" address it prints, with the phone on the same Wi-Fi as the computer. The
+computer must stay on and awake. The first time, allow Node through the firewall if asked.
+
 Price data comes from Yahoo Finance (free, unofficial, personal use only) and is cached in
 `data/` for a day.
 
