@@ -1,7 +1,11 @@
-models/
-keys/
+data/
+.venv/
 venv/
-env/
-.env
 __pycache__/
-utils/__pycache__/
+*.pyc
+node_modules/
+frontend/dist/
+.env
+.superpowers/
+.pytest_cache/
+.ruff_cache/
