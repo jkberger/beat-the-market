@@ -1,6 +1,7 @@
 """Record a fixture of daily bars from Yahoo for offline tests.
 
-Usage: uv run python scripts/record_fixture.py AAPL 2014-01-01 2024-01-01 tests/fixtures/aapl_daily.csv
+Usage:
+    uv run python scripts/record_fixture.py AAPL 2014-01-01 2024-01-01 out.csv
 """
 
 import sys
