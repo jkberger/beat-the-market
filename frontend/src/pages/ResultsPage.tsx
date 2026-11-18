@@ -8,6 +8,7 @@ import { EquityChart, rebase, type EquityLine } from "@/components/EquityChart";
 import { ErrorBox, Spinner } from "@/components/ErrorBox";
 import { MetricsCards, SEGMENT_LABEL } from "@/components/MetricsCards";
 import { PriceChart } from "@/components/PriceChart";
+import { TestedDates } from "@/components/TestedDates";
 import { TradeTable } from "@/components/TradeTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -70,6 +71,8 @@ function RunView({ run }: { run: Run }) {
   const [label, setLabel] = useState<SegmentLabel>(labels[0]);
   const seg = run.segments[label] ?? run.segments[labels[0]]!;
   const barsQ = useQuery({ queryKey: ["bars", run.symbol], queryFn: () => api.bars(run.symbol) });
+  const settingsQ = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
+  const holdoutSeg = run.segments.holdout;
 
   const lines: EquityLine[] = useMemo(() => {
     const first = seg.equity.find((p) => p.value !== null)?.value ?? 10_000;
@@ -89,6 +92,13 @@ function RunView({ run }: { run: Run }) {
 
   return (
     <div className="flex flex-col gap-6">
+      {run.windows.length > 0 && (
+        <TestedDates
+          windows={run.windows}
+          holdout={holdoutSeg ? { start: holdoutSeg.start, end: holdoutSeg.end } : null}
+          holdoutStart={settingsQ.data?.holdout_start}
+        />
+      )}
       <MetricsCards symbol={run.symbol} segments={run.segments} holdoutCount={run.holdout_count} />
 
       <Card>

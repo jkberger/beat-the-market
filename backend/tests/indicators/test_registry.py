@@ -67,3 +67,17 @@ def test_unknown_indicator_raises(bars):
 def test_unknown_param_raises(bars):
     with pytest.raises(ValueError):
         compute("rsi", bars, {"lenght": 14})
+
+
+def test_standard_defaults():
+    d = {i: {p.name: p.default for p in REGISTRY[i].params} for i in REGISTRY}
+    assert d["sma"] == {"length": 50}
+    assert d["ema"] == {"length": 20}
+    assert d["rsi"] == {"length": 14}
+    assert d["macd"] == {"fast": 12, "slow": 26, "signal": 9}
+    assert d["bbands"] == {"length": 20, "std": 2.0}
+    assert d["stoch"] == {"length": 14, "smooth": 3}
+    assert d["adx"] == {"length": 14}
+    assert d["atr"] == {"length": 14}
+    assert d["ichimoku"] == {"conversion": 9, "base": 26, "span_b": 52}
+    assert d["supertrend"] == {"length": 10, "multiplier": 3.0}

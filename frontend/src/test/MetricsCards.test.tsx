@@ -39,3 +39,8 @@ test("shows a verdict against buy and hold", () => {
   render(<MetricsCards symbol="AAPL" holdoutCount={null} segments={{ backtest: seg("backtest", m({ cagr: 0.1 })) }} />);
   expect(screen.getByText(/trailed buy & hold AAPL/i)).toBeInTheDocument();
 });
+
+test("drawdown is explained on the equity chart", async () => {
+  const { DRAWDOWN_HELP } = await import("@/components/EquityChart");
+  expect(DRAWDOWN_HELP).toMatch(/below its own best value/);
+});

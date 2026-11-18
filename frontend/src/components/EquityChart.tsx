@@ -1,5 +1,7 @@
 import { ColorType, createChart, LineStyle, type Time } from "lightweight-charts";
+import { Info } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { Tooltip } from "@/components/ui/tooltip";
 import type { Point } from "@/api/types";
 import { useChartTheme } from "@/lib/theme";
 
@@ -9,6 +11,9 @@ export interface EquityLine {
   color?: string;
   dashed?: boolean;
 }
+
+export const DRAWDOWN_HELP =
+  "How far the strategy's account is below its own best value so far. -15% means it is 15% under its previous peak; 0% means it is at a new high. It shows how deep and how long the losing stretches were.";
 
 /** Rebase a baseline so it starts at `start` value on the first date >= from. */
 export function rebase(points: Point[], from: string, to: string, startValue: number): Point[] {
@@ -82,7 +87,13 @@ export function EquityChart({ lines, height = 320 }: { lines: EquityLine[]; heig
   return (
     <div>
       <div ref={ref} style={{ height }} />
-      <div ref={ddRef} style={{ height: 110 }} className="mt-1 border-t border-border" />
+      <div className="mt-2 flex items-center gap-1 border-t border-border pt-2 text-[11px] font-medium text-muted">
+        Strategy drawdown
+        <Tooltip text={DRAWDOWN_HELP}>
+          <Info className="h-3 w-3" aria-label="What is drawdown?" />
+        </Tooltip>
+      </div>
+      <div ref={ddRef} style={{ height: 110 }} />
     </div>
   );
 }

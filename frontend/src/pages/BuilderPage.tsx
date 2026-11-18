@@ -139,9 +139,9 @@ export function BuilderPage() {
               <CardDescription>Starts in cash. A buy signal goes in, a sell signal gets out, and it repeats every time the signals fire.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-6">
-              <RuleBuilder title="Buy when" value={strategy.buy} indicators={indicators} onChange={(buy) => setStrategy({ ...strategy, buy })} />
+              <RuleBuilder title="Buy when" side="buy" value={strategy.buy} indicators={indicators} onChange={(buy) => setStrategy({ ...strategy, buy })} />
               <div className="h-px bg-border" />
-              <RuleBuilder title="Sell when" value={strategy.sell} indicators={indicators} onChange={(sell) => setStrategy({ ...strategy, sell })} />
+              <RuleBuilder title="Sell when" side="sell" value={strategy.sell} indicators={indicators} onChange={(sell) => setStrategy({ ...strategy, sell })} />
             </CardContent>
           </Card>
 

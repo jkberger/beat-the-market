@@ -3,7 +3,7 @@ import type { Metrics } from "@/api/types";
 export const METRIC_HELP: Partial<Record<keyof Metrics, string>> = {
   cagr: "Compound annual growth rate: the steady yearly return that would produce the same result.",
   total_return: "How much the account grew over the whole period.",
-  max_drawdown: "The worst drop from a peak to a later low. Smaller is easier to live with.",
+  max_drawdown: "The worst drop from a high point to a later low, in %. -25% means at its worst the account was a quarter below its previous peak. Smaller is easier to live with.",
   sharpe: "Return per unit of volatility, annualized. Above 1 is good; below 0.5 is weak.",
   sortino: "Like Sharpe, but only counts downside volatility.",
   num_trades: "Completed round trips (buy then sell).",

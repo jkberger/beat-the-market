@@ -9,7 +9,7 @@ export const DEFAULT_STRATEGY: Strategy = {
       {
         kind: "condition",
         left: { kind: "indicator", id: "rsi", params: { length: 14 }, output: "rsi" },
-        op: "crosses_above",
+        op: "crosses_below",
         right: { kind: "constant", value: 30 },
         bars: 1,
       },
@@ -22,7 +22,7 @@ export const DEFAULT_STRATEGY: Strategy = {
       {
         kind: "condition",
         left: { kind: "indicator", id: "rsi", params: { length: 14 }, output: "rsi" },
-        op: "crosses_below",
+        op: "crosses_above",
         right: { kind: "constant", value: 70 },
         bars: 1,
       },

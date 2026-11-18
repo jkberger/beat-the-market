@@ -13,10 +13,10 @@ export const SEGMENT_LABEL: Record<SegmentLabel, string> = {
 };
 
 const SEGMENT_NOTE: Record<SegmentLabel, string> = {
-  out_of_sample: "Stitched from test windows the tuning never saw.",
-  holdout: "Locked data, scored with the final settings.",
-  backtest: "Your fixed rules over the chosen dates.",
-  in_sample: "Data the strategy was tuned on. Expect this to look too good.",
+  out_of_sample: "Only the blind 6-month test windows, each traded with settings tuned on the 3 years before it. Tested",
+  holdout: "Locked data never used for tuning, scored with the final settings. Covers",
+  backtest: "Your fixed rules over the chosen dates. Covers",
+  in_sample: "Data the strategy was tuned on. Expect this to look too good. Covers",
 };
 
 const ORDER: SegmentLabel[] = ["out_of_sample", "holdout", "backtest", "in_sample"];

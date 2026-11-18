@@ -11,7 +11,7 @@ def _wma(s: pd.Series, n: int) -> pd.Series:
     return s.rolling(n).apply(lambda x: np.dot(x, w) / w.sum(), raw=True)
 
 
-@indicator("sma", "Simple Moving Average", "trend", ["sma"], True, [length(20)])
+@indicator("sma", "Simple Moving Average", "trend", ["sma"], True, [length(50)])
 def sma(bars, length):
     return pd.DataFrame({"sma": bars["close"].rolling(length).mean()})
 

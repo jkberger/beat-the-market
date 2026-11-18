@@ -2,6 +2,7 @@ import { Plus } from "lucide-react";
 import type { Condition, Group, IndicatorSpec } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
+import type { Side } from "@/lib/indicatorDefaults";
 import { ConditionRow } from "./ConditionRow";
 
 export function newCondition(): Condition {
@@ -13,11 +14,12 @@ interface Props {
   value: Group;
   onChange: (g: Group) => void;
   indicators: IndicatorSpec[];
+  side: Side;
   depth?: number;
   onRemove?: () => void;
 }
 
-export function RuleBuilder({ title, value, onChange, indicators, depth = 0, onRemove }: Props) {
+export function RuleBuilder({ title, value, onChange, indicators, side, depth = 0, onRemove }: Props) {
   const setItem = (i: number, item: Condition | Group) =>
     onChange({ ...value, items: value.items.map((x, j) => (j === i ? item : x)) });
   const removeItem = (i: number) => onChange({ ...value, items: value.items.filter((_, j) => j !== i) });
@@ -46,10 +48,10 @@ export function RuleBuilder({ title, value, onChange, indicators, depth = 0, onR
       <div className="flex flex-col gap-2">
         {value.items.map((item, i) =>
           item.kind === "group" ? (
-            <RuleBuilder key={i} title="Group" value={item} indicators={indicators} depth={depth + 1}
+            <RuleBuilder key={i} title="Group" value={item} indicators={indicators} side={side} depth={depth + 1}
               onChange={(g) => setItem(i, g)} onRemove={() => removeItem(i)} />
           ) : (
-            <ConditionRow key={i} value={item} indicators={indicators}
+            <ConditionRow key={i} value={item} indicators={indicators} side={side}
               onChange={(c) => setItem(i, c)} onRemove={() => removeItem(i)} />
           ),
         )}

@@ -10,6 +10,7 @@ function Harness({ onChange }: { onChange: (g: Group) => void }) {
   return (
     <RuleBuilder
       title="Buy when"
+      side="buy"
       value={g}
       indicators={specs}
       onChange={(next) => {
@@ -78,4 +79,13 @@ test("join toggle switches to or", async () => {
   await userEvent.click(screen.getByRole("radio", { name: "Any (OR)" }));
   expect(last(onChange).join).toBe("or");
   expect(last(onChange).items).toHaveLength(2);
+});
+
+test("choosing RSI in a buy rule fills in the standard oversold level", async () => {
+  const onChange = vi.fn();
+  render(<Harness onChange={onChange} />);
+  await userEvent.click(screen.getByRole("button", { name: /add condition/i }));
+  await userEvent.selectOptions(screen.getByLabelText("Left operand"), "ind:rsi");
+  const cond = last(onChange).items[0] as Condition;
+  expect(cond).toMatchObject({ op: "crosses_below", right: { kind: "constant", value: 30 } });
 });

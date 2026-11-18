@@ -1,6 +1,7 @@
 import { Trash2 } from "lucide-react";
 import type { Condition, IndicatorSpec, Op } from "@/api/types";
 import { Select } from "@/components/ui/input";
+import { suggestCondition, type Side } from "@/lib/indicatorDefaults";
 import { OperandEditor } from "./OperandEditor";
 
 export const OP_LABELS: Record<Op, string> = {
@@ -19,9 +20,10 @@ interface Props {
   onChange: (c: Condition) => void;
   onRemove: () => void;
   indicators: IndicatorSpec[];
+  side: Side;
 }
 
-export function ConditionRow({ value, onChange, onRemove, indicators }: Props) {
+export function ConditionRow({ value, onChange, onRemove, indicators, side }: Props) {
   const needsRight = NEEDS_RIGHT.includes(value.op);
   const setOp = (op: Op) => {
     const next: Condition = { ...value, op };
@@ -35,7 +37,12 @@ export function ConditionRow({ value, onChange, onRemove, indicators }: Props) {
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-2/50 p-2">
       <OperandEditor side="Left" value={value.left} indicators={indicators} allowConstant={false}
-        onChange={(left) => onChange({ ...value, left })} />
+        onChange={(left) => {
+          const newIndicator =
+            left.kind === "indicator" && (value.left.kind !== "indicator" || value.left.id !== left.id);
+          const spec = newIndicator && left.kind === "indicator" ? indicators.find((i) => i.id === left.id) : undefined;
+          onChange(spec ? suggestCondition(spec, side) : { ...value, left });
+        }} />
       <Select aria-label="Comparison" value={value.op} onChange={(e) => setOp(e.target.value as Op)} className="h-8 text-sm font-medium">
         {(Object.keys(OP_LABELS) as Op[]).map((op) => (
           <option key={op} value={op}>
