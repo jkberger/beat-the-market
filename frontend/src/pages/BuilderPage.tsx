@@ -53,6 +53,7 @@ export function BuilderPage() {
   const [slippage, setSlippage] = useState(0);
   const [mode, setMode] = useState<BacktestRequest["mode"]>("walk_forward");
   const [scoreHoldout, setScoreHoldout] = useState(false);
+  const [training, setTraining] = useState<"all" | "recent">("all");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
 
@@ -86,6 +87,7 @@ export function BuilderPage() {
         start: start || null,
         end: end || null,
         score_holdout: mode === "walk_forward" && scoreHoldout,
+        training,
       }),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ["backtests"] });
@@ -191,10 +193,17 @@ export function BuilderPage() {
                 options={[{ value: "walk_forward", label: "Walk-forward" }, { value: "simple", label: "Simple" }]} />
               <p className="text-xs text-muted">
                 {mode === "walk_forward"
-                  ? "Tunes on 3 years, tests on the next 6 months it never saw, rolls forward, repeats. Results are out-of-sample."
+                  ? "Tunes on past data, trades the next 6 months blind, slides forward 6 months and repeats, so you get many blind tests instead of one lucky one."
                   : "Runs your fixed rules over the dates you pick. Ranges need walk-forward."}
               </p>
               {ranged && mode === "simple" && <p className="text-xs text-loss">This strategy has ranges to tune. Switch to walk-forward.</p>}
+              {mode === "walk_forward" && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted">Each test window trains on</span>
+                  <Segmented label="Training history" value={training} onChange={setTraining} className="flex w-full"
+                    options={[{ value: "all", label: "All history before it" }, { value: "recent", label: "Only the last 3 years" }]} />
+                </div>
+              )}
               {mode === "walk_forward" && (
                 <div className="flex flex-col gap-1">
                   <Switch label="Also score the locked holdout" checked={scoreHoldout} onChange={setScoreHoldout} />

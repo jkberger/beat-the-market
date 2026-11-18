@@ -4,12 +4,13 @@ interface Props {
   windows: WindowInfo[];
   holdout: { start: string; end: string } | null;
   holdoutStart?: string;
+  training?: "all" | "recent" | null;
 }
 
 const days = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / 86_400_000;
 
 /** A plain-English timeline of what the strategy was tuned on, tested on, and held out from. */
-export function TestedDates({ windows, holdout, holdoutStart }: Props) {
+export function TestedDates({ windows, holdout, holdoutStart, training = "recent" }: Props) {
   if (!windows.length) return null;
   const first = windows[0].window;
   const last = windows[windows.length - 1].window;
@@ -29,8 +30,10 @@ export function TestedDates({ windows, holdout, holdoutStart }: Props) {
         <div className="flex gap-2">
           <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-muted/60" />
           <span>
-            <span className="font-medium">Training.</span> First trained on {first.train_start} to {first.train_end}. Every later
-            window is tuned only on the 3 years right before it.
+            <span className="font-medium">Training.</span> First trained on {first.train_start} to {first.train_end}.{" "}
+            {training === "all"
+              ? "Every later window is tuned on all history before it, so the training data grows each time."
+              : "Every later window is tuned only on the 3 years right before it."}
           </span>
         </div>
         <div className="flex gap-2">

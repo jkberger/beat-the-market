@@ -45,8 +45,12 @@ def split_dev(bars: pd.DataFrame, holdout_start: date) -> pd.DataFrame:
 
 
 def walk_forward_windows(
-    index: pd.DatetimeIndex, train_years: int = 3, test_months: int = 6
+    index: pd.DatetimeIndex, train_years: int = 3, test_months: int = 6, anchored: bool = False
 ) -> list[Window]:
+    """Rolling windows by default; anchored=True trains every window on all history before it.
+
+    Either way the first test starts after `train_years` of history.
+    """
     need = train_years + test_months / 12
     if len(index) == 0:
         raise NotEnoughHistory(
@@ -65,7 +69,8 @@ def walk_forward_windows(
     while True:
         test_from = anchor + pd.DateOffset(years=train_years)
         test_to = test_from + pd.DateOffset(months=test_months)
-        train = index[(index >= anchor) & (index < test_from)]
+        train_from = first if anchored else anchor
+        train = index[(index >= train_from) & (index < test_from)]
         test = index[(index >= test_from) & (index < test_to)]
         if len(test) == 0 or len(train) == 0:
             break
@@ -134,9 +139,10 @@ def run_walk_forward(
     holdout_start: date,
     train_years: int = 3,
     test_months: int = 6,
+    anchored: bool = False,
 ) -> tuple[SegmentResult, list[dict], Strategy]:
     dev = split_dev(bars, holdout_start)
-    windows = walk_forward_windows(dev.index, train_years, test_months)
+    windows = walk_forward_windows(dev.index, train_years, test_months, anchored)
     equity_parts, position_parts, trades, info = [], [], [], []
     capital = config.initial_equity
     for w in windows:
@@ -167,7 +173,11 @@ def run_walk_forward(
         position,
     )
     # Final settings for the holdout: tuned on the most recent training span before it.
-    last_from = (dev.index[-1] - pd.DateOffset(years=train_years)).date()
+    last_from = (
+        dev.index[0].date()
+        if anchored
+        else (dev.index[-1] - pd.DateOffset(years=train_years)).date()
+    )
     final, _ = tune(strategy, dev, risk, config, last_from, dev.index[-1].date())
     return seg, info, final
 

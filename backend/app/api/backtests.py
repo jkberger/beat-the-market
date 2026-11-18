@@ -38,6 +38,8 @@ class BacktestRequest(BaseModel):
     start: date | None = None
     end: date | None = None
     score_holdout: bool = False
+    # Walk-forward training span: "all" = all history before each test, "recent" = last 3 years.
+    training: Literal["all", "recent"] = "all"
 
 
 def _range(df: pd.DataFrame, start: date | None, end: date | None) -> pd.DataFrame:
@@ -123,7 +125,12 @@ def _run_symbol(req: BacktestRequest, symbol: str, bars, spy, s: Session) -> dic
         in_range = _range(bars, req.start, None)
         try:
             oos, windows, final = run_walk_forward(
-                req.strategy, in_range, req.risk, req.config, holdout_start
+                req.strategy,
+                in_range,
+                req.risk,
+                req.config,
+                holdout_start,
+                anchored=req.training == "all",
             )
         except NotEnoughHistory as e:
             raise HTTPException(422, f"{symbol}: {e}") from e
@@ -152,6 +159,7 @@ def _run_symbol(req: BacktestRequest, symbol: str, bars, spy, s: Session) -> dic
         },
         "markers": _markers(segments),
         "windows": windows,
+        "training": req.training if req.mode == "walk_forward" else None,
         "holdout_count": count,
     }
 
