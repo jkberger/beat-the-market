@@ -32,3 +32,6 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.uv]
 package = false
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
