@@ -1,51 +1,67 @@
-# Universal Trading App
+# Beat The Market
 
-This is a Flask-based web application that:
-- Trains a universal machine learning model on historical data from all S&P 500 stocks.
-- Backtests the trained model on individual stocks.
-- Integrates with Alpaca’s paper trading API for live trading simulation.
-- Provides a web dashboard with options to train the model, view backtest charts, and run live trading.
+A trading research app. Build buy and sell rules from 25 technical indicators, then test them
+honestly: on data the strategy never saw, with repeated trading in and out, next to simply
+holding the stock and SPY.
 
-## Prerequisites
+> Research tool, not financial advice. Past results don't guarantee future returns.
 
-- **Python 3.7 or higher**  
-- **Alpaca Paper Trading Account:**  
-  You need API credentials (an API key and secret) from Alpaca.  
-- **Internet Connection:**  
-  The app fetches historical data via the yfinance API and interacts with Alpaca.
+## Start it
 
-## Setup Instructions
-
-### 1. Clone the Repository
-
-Clone the repository from GitHub (or download the source code):
+**Option 1: Docker (one command)**
 
 ```bash
-> git clone <repository_url>
-> cd <repository_directory>
+docker compose up --build
+```
 
-### 2. Create a Virtual Environment
-```MacOs or linux
-> python3 -m venv venv
-> source venv/bin/activate
+Open http://localhost:8000.
 
-```Windows
-> python -m venv venv
-> venv\Scripts\activate
+**Option 2: Without Docker** (needs Node.js 20+; the script installs `uv` for Python if missing)
 
-### 3. Install Dependencies
-A requirements.txt file is provided. Install the required packages:
-> pip install -r requirements.txt
+```bash
+./dev.sh          # macOS / Linux
+.\dev.ps1         # Windows PowerShell
+```
 
-If for some reason you dont have the requirements.txt file you can run: 
-> pip install flask numpy pandas scikit-learn yfinance alpaca-trade-api plotly
+Open http://localhost:5173. The API runs on :8000 and both reload when you edit code.
 
-### 4. Configure Alpaca API Credentials
-Create a .env file at the root level of this repository and add the 
-following two lines:
-> ALPACA_API_KEY=your_api_key_here
-> ALPACA_SECRET_KEY=your_secret_key_here
+Price data comes from Yahoo Finance (free, unofficial, personal use only) and is cached in
+`data/` for a day.
 
-### 5. Run the application
-> python3 trading_app.py
-Open the app to try out features and debug testing at http://127.0.0.1:5000 in your web browser
+## What it does (phase 1)
+
+- **Stock page:** candlestick chart with any of 25 indicators overlaid or in their own panes.
+- **Strategy builder:** buy rules and sell rules built from indicator conditions (`is above`,
+  `crosses above`, `is rising for N bars`, …) joined by AND / OR, plus optional stop loss,
+  take profit, max holding period, and shorting on sell signals.
+- **Risk tolerance:** Conservative, Balanced, Aggressive or Custom. Sets position size, stop,
+  a drawdown limit, and what tuning optimizes for.
+- **Honest testing:**
+  - Signals fire at a day's close and fill at the **next day's open**.
+  - **Walk-forward:** tune on 3 years, trade the next 6 months blind, roll forward, repeat.
+  - **Locked holdout:** the last 2 years (a fixed date in settings) are never used for tuning
+    and are scored separately, with a count of how often you've peeked.
+  - Every result is compared with buy-and-hold of the stock and of SPY over the same dates.
+  - Commission is $0; optional slippage in basis points.
+
+Coming next: mining indicator combos across popular stocks, per-stock outlook with suggested
+stock and options strategies, and Alpaca paper trading. See
+[the design spec](docs/superpowers/specs/2026-11-18-beat-the-market-rebuild-design.md).
+
+## Develop
+
+```bash
+cd backend && uv run pytest        # backend tests
+cd frontend && npm test            # frontend tests
+```
+
+| Folder | What's in it |
+|---|---|
+| `backend/app/data` | price providers and the Parquet cache |
+| `backend/app/indicators` | the indicator registry |
+| `backend/app/strategy` | rule model, evaluator, plain-English description, tuning grid, risk presets |
+| `backend/app/backtest` | engine, metrics, walk-forward and holdout |
+| `backend/app/api` | JSON routes under `/api` |
+| `frontend/src` | React app (Vite, Tailwind, TanStack Query, lightweight-charts) |
+
+Settings come from environment variables (see `.env.example`).

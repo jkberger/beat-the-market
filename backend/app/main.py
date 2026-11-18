@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import backtests, market, settings, strategies
-from app.data.providers import SymbolNotFound
+from app.data.providers import DataSourceError, SymbolNotFound
 from app.db import init_db
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
@@ -24,6 +24,18 @@ def create_app() -> FastAPI:
     @app.exception_handler(SymbolNotFound)
     async def _not_found(request: Request, exc: SymbolNotFound):
         return JSONResponse({"detail": f"Unknown symbol: {exc.symbol}"}, status_code=404)
+
+    async def _source_down(request: Request, exc: Exception):
+        return JSONResponse(
+            {
+                "detail": "Couldn't reach the price data source. Check your internet connection "
+                "and try again."
+            },
+            status_code=503,
+        )
+
+    for exc_type in (DataSourceError, ConnectionError, TimeoutError):
+        app.add_exception_handler(exc_type, _source_down)
 
     @app.exception_handler(ValueError)
     async def _bad_value(request: Request, exc: ValueError):

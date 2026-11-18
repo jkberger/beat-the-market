@@ -202,3 +202,15 @@ def test_multi_symbol_summary_median(client):
 
 def test_settings_roundtrip(client):
     assert client.get("/api/settings").json() == {"holdout_start": "2021-09-01"}
+
+
+class DownProvider:
+    def get_daily_bars(self, symbol, start=None, end=None):
+        raise ConnectionError("network down")
+
+
+def test_data_source_down_503(client):
+    client.app_ref.dependency_overrides[get_price_provider] = lambda: DownProvider()
+    r = client.get("/api/bars/AAPL")
+    assert r.status_code == 503
+    assert "price data" in r.json()["detail"].lower()

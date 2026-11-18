@@ -63,6 +63,7 @@ export function RiskControl({ value, onChange }: { value: RiskSettings; onChange
   return (
     <div className="flex flex-col gap-3">
       <Segmented
+        className="flex w-full"
         label="Risk tolerance"
         value={value.preset}
         onChange={(p) => (p === "custom" ? onChange({ ...value, preset: "custom" }) : onChange(RISK_PRESETS[p]))}
