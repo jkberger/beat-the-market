@@ -17,15 +17,16 @@ from app.backtest.validation import (
     score_holdout,
     simple_segment,
 )
-from app.data.providers import PriceProvider, SymbolNotFound
+from app.data.providers import DataSourceError, PriceProvider, SymbolNotFound
 from app.data.universe import get_price_provider
 from app.db import get_session
 from app.strategy.describe import describe
-from app.strategy.grid import expand_grid, structure_key
+from app.strategy.grid import _find_ranges, expand_grid, structure_key
 from app.strategy.models import BacktestConfig, RiskSettings, Strategy
 
 router = APIRouter(prefix="/api/backtests")
 BENCHMARK = "SPY"
+MAX_WORK = 400  # tuning combinations x symbols per request, keeps one request to ~2 min
 
 
 class BacktestRequest(BaseModel):
@@ -99,19 +100,24 @@ def _run_symbol(req: BacktestRequest, symbol: str, bars, spy, s: Session) -> dic
     windows: list[dict] = []
     count = None
     if req.mode == "simple":
-        try:
-            combos = len(expand_grid(req.strategy))
-        except ValueError:
-            combos = 2
-        if combos > 1:
+        if list(_find_ranges(req.strategy.model_dump())):
+            expand_grid(req.strategy)  # a ValueError here carries the real limit message
             raise HTTPException(
                 422, "Simple mode can't tune ranges. Switch to walk-forward to tune them."
             )
-        segments = [
-            simple_segment(
-                req.strategy, _range(bars, None, req.end), req.risk, req.config, req.start, req.end
-            )
-        ]
+        try:
+            segments = [
+                simple_segment(
+                    req.strategy,
+                    _range(bars, None, req.end),
+                    req.risk,
+                    req.config,
+                    req.start,
+                    req.end,
+                )
+            ]
+        except NotEnoughHistory as e:
+            raise HTTPException(422, f"{symbol}: {e}") from e
     else:
         holdout_start = repo.get_holdout_start(s)
         in_range = _range(bars, req.start, None)
@@ -169,9 +175,19 @@ def run_backtest(
     s: Session = Depends(get_session),
 ) -> dict:
     symbols = list(dict.fromkeys(sym.upper().strip() for sym in req.symbols))
+    if req.start and req.end and req.start >= req.end:
+        raise HTTPException(422, "The start date must be before the end date.")
+    if req.mode == "walk_forward":
+        work = len(expand_grid(req.strategy)) * len(symbols)
+        if work > MAX_WORK:
+            raise HTTPException(
+                422,
+                f"That's {work:,} tuning combinations across {len(symbols)} stocks; the limit "
+                f"is {MAX_WORK} per run. Use fewer stocks, narrower ranges or bigger steps.",
+            )
     try:
         spy = provider.get_daily_bars(BENCHMARK)
-    except SymbolNotFound:
+    except (SymbolNotFound, DataSourceError):
         spy = None
     runs = [_run_symbol(req, sym, provider.get_daily_bars(sym), spy, s) for sym in symbols]
     body = clean(

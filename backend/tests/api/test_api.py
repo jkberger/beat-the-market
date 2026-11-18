@@ -214,3 +214,48 @@ def test_data_source_down_503(client):
     r = client.get("/api/bars/AAPL")
     assert r.status_code == 503
     assert "price data" in r.json()["detail"].lower()
+
+
+@pytest.mark.parametrize(
+    "start,end",
+    [("2030-01-01", None), ("2020-06-01", "2020-01-01"), (None, "1990-01-01")],
+)
+def test_simple_dates_outside_data_422(client, start, end):
+    r = client.post("/api/backtests", json=_body(start=start, end=end))
+    assert r.status_code == 422
+    assert "AAPL" in r.json()["detail"] or "start" in r.json()["detail"].lower()
+
+
+def test_too_much_tuning_work_422(client):
+    s = rsi_strategy(
+        buy_level={"min": 10, "max": 40, "step": 1}, sell_level={"min": 60, "max": 65, "step": 1}
+    ).model_dump(mode="json")
+    r = client.post(
+        "/api/backtests",
+        json=_body(strategy=s, mode="walk_forward", symbols=["AAPL", "MSFT", "SPY"]),
+    )
+    assert r.status_code == 422
+    assert "combinations" in r.json()["detail"]
+
+
+def test_grid_error_message_passed_through_in_simple_mode(client):
+    s = rsi_strategy(buy_level={"min": 0, "max": 1e9, "step": 1e-9}).model_dump(mode="json")
+    r = client.post("/api/backtests", json=_body(strategy=s))
+    assert r.status_code == 422
+    assert "200" in r.json()["detail"]
+
+
+class SpyDownProvider(FixtureProvider):
+    def get_daily_bars(self, symbol, start=None, end=None):
+        from app.data.providers import DataSourceError
+
+        if symbol.upper() == "SPY":
+            raise DataSourceError("down")
+        return super().get_daily_bars(symbol, start, end)
+
+
+def test_benchmark_outage_still_runs(client):
+    client.app_ref.dependency_overrides[get_price_provider] = lambda: SpyDownProvider()
+    r = client.post("/api/backtests", json=_body())
+    assert r.status_code == 200
+    assert r.json()["runs"][0]["baselines"]["spy"] is None

@@ -18,8 +18,11 @@ class RangeSpec(BaseModel):
             raise ValueError("range max must be >= min")
         return self
 
+    def count(self) -> int:
+        return int((self.max - self.min) / self.step + 1e-9) + 1
+
     def values(self) -> list[float]:
-        n = int(round((self.max - self.min) / self.step))
+        n = self.count() - 1
         vals = [round(self.min + i * self.step, 10) for i in range(n + 1)]
         return [v for v in vals if v <= self.max + 1e-9]
 

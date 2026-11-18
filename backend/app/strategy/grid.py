@@ -41,12 +41,11 @@ def expand_grid(strategy: Strategy) -> list[Strategy]:
         raise ValueError(
             f"At most {MAX_RANGES} values can be ranges; this strategy has {len(paths)}"
         )
-    axes = [RangeSpec(**_get(data, p)).values() for p in paths]
-    total = 1
-    for a in axes:
-        total *= len(a)
+    specs = [RangeSpec(**_get(data, p)) for p in paths]
+    total = _product(s.count() for s in specs)
     if total > MAX_COMBOS:
-        raise ValueError(f"Tuning would test {total} combinations; the limit is {MAX_COMBOS}")
+        raise ValueError(f"Tuning would test {total:,} combinations; the limit is {MAX_COMBOS}")
+    axes = [s.values() for s in specs]
     out = []
     for combo in itertools.product(*axes):
         d = json.loads(json.dumps(data))
@@ -54,6 +53,19 @@ def expand_grid(strategy: Strategy) -> list[Strategy]:
             _set(d, p, v)
         out.append(Strategy.model_validate(d))
     return out
+
+
+def _product(counts) -> int:
+    total = 1
+    for c in counts:
+        total *= c
+    return total
+
+
+def combo_count(strategy: Strategy) -> int:
+    """How many concrete strategies expand_grid would produce, without building them."""
+    data = strategy.model_dump()
+    return _product(RangeSpec(**_get(data, p)).count() for p in _find_ranges(data))
 
 
 def _strip_numbers(node, key=None):

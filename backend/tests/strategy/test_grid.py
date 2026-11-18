@@ -56,3 +56,16 @@ def test_structure_key_ignores_params_but_not_indicators():
     d.buy.items[0].left.id = "mfi"
     d.buy.items[0].left.output = "mfi"
     assert structure_key(d) != structure_key(a)
+
+
+def test_huge_single_range_rejected_without_building_it():
+    s = rsi_strategy(buy_level={"min": 0, "max": 1e9, "step": 1e-9})
+    with pytest.raises(ValueError, match="200"):
+        expand_grid(s)
+
+
+def test_combo_count_does_not_expand():
+    from app.strategy.grid import combo_count
+
+    s = rsi_strategy(buy_level={"min": 0, "max": 1e9, "step": 1e-9})
+    assert combo_count(s) > 10**17

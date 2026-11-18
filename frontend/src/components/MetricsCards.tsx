@@ -116,8 +116,11 @@ export function MetricsCards({ symbol, segments, holdoutCount }: Props) {
             footer={
               <>
                 {verdict(seg.metrics, seg.baseline_metrics.stock, symbol)}
-                {label === "holdout" && holdoutCount !== null && holdoutCount > 1 && (
-                  <div className="text-[11px] text-muted">Scored {holdoutCount} times</div>
+                {label === "holdout" && holdoutCount !== null && holdoutCount > 0 && (
+                  <div className="text-[11px] text-muted">
+                    Scored {holdoutCount} {holdoutCount === 1 ? "time" : "times"}
+                    {holdoutCount > 1 && ". Repeated peeks make it less trustworthy."}
+                  </div>
                 )}
               </>
             }

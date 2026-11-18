@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.data.providers import PriceProvider, SymbolNotFound, slice_bars
+from app.data.providers import PriceProvider, slice_bars
 
 
 class CachedPriceProvider:
@@ -33,8 +33,6 @@ class CachedPriceProvider:
             try:
                 df = self.inner.get_daily_bars(symbol)
                 df.to_parquet(path)
-            except SymbolNotFound:
-                raise
             except Exception:
                 if not path.exists():
                     raise

@@ -49,7 +49,10 @@ def walk_forward_windows(
 ) -> list[Window]:
     need = train_years + test_months / 12
     if len(index) == 0:
-        raise NotEnoughHistory(f"Walk-forward needs at least {need:g} years before the holdout.")
+        raise NotEnoughHistory(
+            f"Walk-forward needs at least {need:g} years before the holdout, and the chosen "
+            "start date is on or after the holdout start."
+        )
     first, last = index[0], index[-1]
     have = (last - first).days / 365.25
     if have < need:
@@ -191,4 +194,8 @@ def simple_segment(
     end: date | None,
 ) -> SegmentResult:
     r = backtest(bars, strategy, risk, config, start=start, end=end)
+    if len(r.equity) < 2:
+        raise NotEnoughHistory(
+            f"No price data between {start or 'the first day'} and {end or 'today'}."
+        )
     return _segment("backtest", r, r.equity.index[0].date(), r.equity.index[-1].date())

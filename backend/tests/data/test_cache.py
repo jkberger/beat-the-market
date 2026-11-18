@@ -75,3 +75,12 @@ def test_symbol_is_case_insensitive(tmp_path):
     p.get_daily_bars("aapl")
     p.get_daily_bars("AAPL")
     assert inner.calls == 1
+
+
+def test_cache_serves_stale_file_when_source_says_not_found(tmp_path):
+    inner = FakeProvider()
+    p = CachedPriceProvider(inner, tmp_path)
+    first = p.get_daily_bars("AAPL")
+    _age(tmp_path / "AAPL.parquet", 2)
+    inner.fail = SymbolNotFound("AAPL")
+    assert len(p.get_daily_bars("AAPL")) == len(first)

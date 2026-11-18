@@ -25,14 +25,14 @@ test("labels segments, shows holdout count, and dashes for null", () => {
   expect(oos).toBeInTheDocument();
   expect(within(oos).getByTestId("sharpe")).toHaveTextContent("—");
   expect(screen.getByText("Holdout (never seen)")).toBeInTheDocument();
-  expect(screen.getByText("Scored 3 times")).toBeInTheDocument();
+  expect(screen.getByText(/Scored 3 times/)).toBeInTheDocument();
   expect(screen.getByText("Buy & hold AAPL")).toBeInTheDocument();
   expect(screen.getByText("Buy & hold SPY")).toBeInTheDocument();
 });
 
-test("does not show the scored count for a single scoring", () => {
+test("shows the scored count on the first scoring too", () => {
   render(<MetricsCards symbol="AAPL" holdoutCount={1} segments={{ holdout: seg("holdout", m()) }} />);
-  expect(screen.queryByText(/Scored/)).not.toBeInTheDocument();
+  expect(screen.getByText(/Scored 1 time$/)).toBeInTheDocument();
 });
 
 test("shows a verdict against buy and hold", () => {
