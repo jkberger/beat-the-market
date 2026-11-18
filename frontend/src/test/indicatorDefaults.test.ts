@@ -22,13 +22,13 @@ test("oscillators get their standard oversold / overbought levels", () => {
   expect(suggestCondition(rsi, "sell")).toMatchObject({ op: "crosses_above", right: { value: 70 } });
 });
 
-test("moving averages compare price to the line", () => {
+test("moving averages keep the picked average on the left against a slower one", () => {
   expect(suggestCondition(sma, "buy")).toMatchObject({
-    left: { kind: "price", field: "close" },
+    left: { kind: "indicator", id: "sma", params: { length: 20 } },
     op: "crosses_above",
-    right: { kind: "indicator", id: "sma", params: { length: 20 } },
+    right: { kind: "indicator", id: "sma", params: { length: 200 } },
   });
-  expect(suggestCondition(sma, "sell")).toMatchObject({ op: "crosses_below" });
+  expect(suggestCondition(sma, "sell")).toMatchObject({ op: "crosses_below", left: { id: "sma" } });
 });
 
 test("MACD uses its signal line", () => {

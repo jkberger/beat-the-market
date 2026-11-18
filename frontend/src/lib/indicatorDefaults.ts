@@ -22,9 +22,12 @@ function params(spec: IndicatorSpec) {
   return Object.fromEntries(spec.params.map((p) => [p.name, p.default]));
 }
 
-function ind(spec: IndicatorSpec, output = spec.outputs[0]): Operand {
+function ind(spec: IndicatorSpec, output = spec.outputs[0]): Extract<Operand, { kind: "indicator" }> {
   return { kind: "indicator", id: spec.id, params: params(spec), output };
 }
+
+/** Moving averages and the slow length each is compared against. */
+const MOVING_AVERAGES: Record<string, number> = { sma: 200, ema: 50, wma: 50, hma: 50, vwma: 50 };
 
 const close: Operand = { kind: "price", field: "close" };
 const num = (value: number): Operand => ({ kind: "constant", value });
@@ -63,9 +66,16 @@ export function suggestCondition(spec: IndicatorSpec, side: Side): Condition {
   if (spec.id === "ichimoku") {
     return { kind: "condition", left: close, op: buy ? "crosses_above" : "crosses_below", right: ind(spec, "base"), bars: 1 };
   }
+  if (MOVING_AVERAGES[spec.id]) {
+    // The picked average stays on the left and is compared with a slower one of the same
+    // kind: fast crossing above slow is a buy (SMA 50 over SMA 200 is the golden cross).
+    const fast = ind(spec);
+    const slow = { ...fast, params: { ...fast.params, length: MOVING_AVERAGES[spec.id] } };
+    return { kind: "condition", left: fast, op: buy ? "crosses_above" : "crosses_below", right: slow, bars: 1 };
+  }
   if (spec.overlay) {
-    // Moving averages, PSAR, Supertrend: price crossing the line.
-    return { kind: "condition", left: close, op: buy ? "crosses_above" : "crosses_below", right: ind(spec), bars: 1 };
+    // Other lines drawn on price: the line dropping under price is a buy.
+    return { kind: "condition", left: ind(spec), op: buy ? "crosses_below" : "crosses_above", right: close, bars: 1 };
   }
   // ATR, OBV and anything else: direction over the last 3 bars.
   return { kind: "condition", left: ind(spec), op: buy ? "rising" : "falling", right: null, bars: 3 };
