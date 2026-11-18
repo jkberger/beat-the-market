@@ -1,0 +1,11 @@
+{
+  "quick_picks": ["SPY", "AAPL", "MSFT", "NVDA", "AMZN"],
+  "symbols": [
+    "SPY", "QQQ", "IWM", "DIA",
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "BRK-B", "LLY",
+    "JPM", "V", "MA", "UNH", "XOM", "JNJ", "PG", "HD", "COST", "ABBV",
+    "WMT", "NFLX", "CRM", "BAC", "KO", "PEP", "MRK", "ORCL", "AMD", "ADBE",
+    "CVX", "TMO", "CSCO", "ACN", "MCD", "ABT", "DIS", "INTC", "QCOM", "TXN",
+    "NKE", "CAT", "GS", "IBM", "BA", "UBER", "PYPL", "SBUX"
+  ]
+}
