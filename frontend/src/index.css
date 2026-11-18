@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 248 250 252;
+  --surface: 255 255 255;
+  --surface-2: 241 245 249;
+  --border: 226 232 240;
+  --text: 15 23 42;
+  --muted: 100 116 139;
+  --accent: 99 102 241;
+  --gain: 16 185 129;
+  --loss: 244 63 94;
+}
+
+.dark {
+  --bg: 9 11 17;
+  --surface: 17 20 29;
+  --surface-2: 24 28 40;
+  --border: 38 44 60;
+  --text: 226 232 240;
+  --muted: 140 150 172;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  @apply bg-bg text-text font-sans antialiased;
+  font-feature-settings: "tnum" 1, "cv11" 1;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
