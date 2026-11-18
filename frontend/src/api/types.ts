@@ -92,7 +92,6 @@ export interface BacktestRequest {
   start?: string | null;
   end?: string | null;
   score_holdout: boolean;
-  training?: "all" | "recent";
 }
 
 export interface Metrics {
@@ -168,7 +167,6 @@ export interface Run {
   markers: Marker[];
   windows: WindowInfo[];
   holdout_count: number | null;
-  training?: "all" | "recent" | null;
 }
 
 export interface BacktestResponse {

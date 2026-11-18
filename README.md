@@ -38,7 +38,7 @@ Price data comes from Yahoo Finance (free, unofficial, personal use only) and is
   a drawdown limit, and what tuning optimizes for.
 - **Honest testing:**
   - Signals fire at a day's close and fill at the **next day's open**.
-  - **Walk-forward:** tune on all history before each test (or just the last 3 years), trade the next 6 months blind, slide forward, repeat. Many blind tests instead of one lucky one.
+  - **Walk-forward:** tune on 3 years, trade the next 6 months blind, roll forward, repeat.
   - **Locked holdout:** the last 2 years (a fixed date in settings) are never used for tuning
     and are scored separately, with a count of how often you've peeked.
   - Every result is compared with buy-and-hold of the stock and of SPY over the same dates.

@@ -97,7 +97,6 @@ function RunView({ run }: { run: Run }) {
           windows={run.windows}
           holdout={holdoutSeg ? { start: holdoutSeg.start, end: holdoutSeg.end } : null}
           holdoutStart={settingsQ.data?.holdout_start}
-          training={run.training}
         />
       )}
       <MetricsCards symbol={run.symbol} segments={run.segments} holdoutCount={run.holdout_count} />

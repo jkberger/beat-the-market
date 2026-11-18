@@ -28,13 +28,3 @@ test("says when the holdout was not scored", () => {
   render(<TestedDates windows={[w("2000-01-03", "2002-12-31", "2003-01-02", "2003-06-30")]} holdout={null} holdoutStart="2024-11-18" />);
   expect(screen.getByText(/not scored in this run/i)).toBeInTheDocument();
 });
-
-test("describes all-history training", () => {
-  render(<TestedDates training="all" windows={[w("2000-01-03", "2002-12-31", "2003-01-02", "2003-06-30")]} holdout={null} />);
-  expect(screen.getByText(/all history before it/i)).toBeInTheDocument();
-});
-
-test("describes recent-only training", () => {
-  render(<TestedDates training="recent" windows={[w("2000-01-03", "2002-12-31", "2003-01-02", "2003-06-30")]} holdout={null} />);
-  expect(screen.getByText(/only on the 3 years right before it/i)).toBeInTheDocument();
-});

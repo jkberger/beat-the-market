@@ -116,25 +116,3 @@ def test_holdout_uses_only_holdout_dates(bars):
 def test_split_dev(bars):
     dev = split_dev(bars, HOLDOUT)
     assert dev.index[-1] < pd.Timestamp(HOLDOUT)
-
-
-def test_anchored_windows_train_on_all_prior_history(bars):
-    windows = walk_forward_windows(bars.index, anchored=True)
-    assert all(w.train_start == bars.index[0].date() for w in windows)
-    assert windows[0].test_start == walk_forward_windows(bars.index)[0].test_start
-    assert windows[-1].train_end < windows[-1].test_start
-
-
-def test_anchored_final_strategy_tuned_on_all_dev(bars, monkeypatch):
-    starts = []
-    real = validation.backtest
-
-    def spy(b, strategy, risk, config, start=None, end=None):
-        starts.append(start)
-        return real(b, strategy, risk, config, start=start, end=end)
-
-    monkeypatch.setattr(validation, "backtest", spy)
-    s = rsi_strategy(buy_level={"min": 25, "max": 35, "step": 5})
-    run_walk_forward(s, bars, RISK, CFG, HOLDOUT, anchored=True)
-    tune_starts = {st for st in starts if st == bars.index[0].date()}
-    assert tune_starts, "anchored tuning should start at the first bar"

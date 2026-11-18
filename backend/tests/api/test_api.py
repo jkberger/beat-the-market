@@ -259,13 +259,3 @@ def test_benchmark_outage_still_runs(client):
     r = client.post("/api/backtests", json=_body())
     assert r.status_code == 200
     assert r.json()["runs"][0]["baselines"]["spy"] is None
-
-
-def test_walk_forward_training_choice(client):
-    body = _body(mode="walk_forward")
-    default = client.post("/api/backtests", json=body).json()["runs"][0]
-    assert default["training"] == "all"
-    assert {w["window"]["train_start"] for w in default["windows"]} == {"2014-01-02"}
-    recent = client.post("/api/backtests", json={**body, "training": "recent"}).json()["runs"][0]
-    assert recent["training"] == "recent"
-    assert len({w["window"]["train_start"] for w in recent["windows"]}) > 1
