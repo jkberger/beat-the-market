@@ -1,4 +1,4 @@
-import type { Strategy } from "@/api/types";
+import type { Group, Operand, Strategy } from "@/api/types";
 
 export const DEFAULT_STRATEGY: Strategy = {
   name: "RSI swing",
@@ -42,4 +42,30 @@ export function hasRanges(node: unknown): boolean {
     return Object.values(node).some(hasRanges);
   }
   return false;
+}
+
+type Ind = Extract<Operand, { kind: "indicator" }>;
+
+function indicators(g: Group, out: Ind[] = []): Ind[] {
+  for (const item of g.items) {
+    if (item.kind === "group") indicators(item, out);
+    else for (const o of [item.left, item.right]) if (o && o.kind === "indicator") out.push(o);
+  }
+  return out;
+}
+
+const len = (o: Ind) => (typeof o.params.length === "number" ? o.params.length : null);
+
+/** A short name that says what the rules use, e.g. "SMA 50/200 cross" or "RSI + MACD". */
+export function autoName(s: Strategy): string {
+  const all = [...indicators(s.buy), ...indicators(s.sell)];
+  if (!all.length) return "Price rules";
+  const ids = [...new Set(all.map((o) => o.id))];
+  if (ids.length === 1) {
+    const lengths = [...new Set(all.map(len).filter((x): x is number => x !== null))].sort((a, b) => a - b);
+    const tag = ids[0].toUpperCase();
+    if (lengths.length === 2) return `${tag} ${lengths[0]}/${lengths[1]} cross`;
+    return lengths.length === 1 ? `${tag} ${lengths[0]} strategy` : `${tag} strategy`;
+  }
+  return ids.map((i) => i.toUpperCase()).join(" + ");
 }

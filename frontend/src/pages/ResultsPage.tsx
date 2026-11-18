@@ -6,7 +6,7 @@ import { api } from "@/api/client";
 import type { BacktestResponse, Run, SegmentLabel } from "@/api/types";
 import { EquityChart, rebase, type EquityLine } from "@/components/EquityChart";
 import { ErrorBox, Spinner } from "@/components/ErrorBox";
-import { MetricsCards, SEGMENT_LABEL } from "@/components/MetricsCards";
+import { Scoreboard, SEGMENT_LABEL } from "@/components/Scoreboard";
 import { PriceChart } from "@/components/PriceChart";
 import { TestedDates } from "@/components/TestedDates";
 import { TradeTable } from "@/components/TradeTable";
@@ -14,59 +14,53 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Segmented } from "@/components/ui/segmented";
-import { formatNumber, formatPct, signClass } from "@/lib/format";
+import { formatPct, signClass } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const PRESET_NAME = { conservative: "Conservative", balanced: "Balanced", aggressive: "Aggressive", custom: "Custom" };
 
-function Comparison({ data, onPick }: { data: BacktestResponse; onPick: (s: string) => void }) {
-  const rows = data.summary.per_symbol;
+function AcrossStocks({ data, onPick, active }: { data: BacktestResponse; onPick: (s: string) => void; active: string }) {
+  const rows = data.runs.map((run) => {
+    const seg = run.segments.out_of_sample ?? run.segments.backtest!;
+    const mine = seg.metrics.cagr;
+    const hold = seg.baseline_metrics.stock?.cagr ?? null;
+    return { symbol: run.symbol, seg, mine, hold, beat: mine != null && hold != null ? mine >= hold : null };
+  });
+  const wins = rows.filter((r) => r.beat).length;
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Comparison across stocks</CardTitle>
+        <CardTitle>Did it beat just holding the stock?</CardTitle>
         <CardDescription>
-          {data.mode === "walk_forward" ? "Out-of-sample" : "Backtest"} results per stock. Median CAGR{" "}
-          {formatPct(data.summary.median.cagr)}, median Sharpe {formatNumber(data.summary.median.sharpe)}.
+          {wins} of {rows.length} stocks. Pick a stock below for its full story.
         </CardDescription>
       </CardHeader>
-      <CardContent className="overflow-x-auto">
-        <table className="w-full text-sm num">
-          <thead className="text-left text-xs text-muted">
-            <tr className="border-b border-border">
-              <th className="py-2 font-medium">Stock</th>
-              <th className="py-2 text-right font-medium">CAGR</th>
-              <th className="py-2 text-right font-medium">vs buy & hold</th>
-              <th className="py-2 text-right font-medium">Max drawdown</th>
-              <th className="py-2 text-right font-medium">Sharpe</th>
-              <th className="py-2 text-right font-medium">Trades</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => {
-              const run = data.runs.find((x) => x.symbol === r.symbol)!;
-              const seg = run.segments.out_of_sample ?? run.segments.backtest!;
-              const base = seg.baseline_metrics.stock?.cagr;
-              const diff = r.metrics.cagr !== null && base != null ? r.metrics.cagr - base : null;
-              return (
-                <tr key={r.symbol} className="cursor-pointer border-b border-border/60 hover:bg-surface-2/60" onClick={() => onPick(r.symbol)}>
-                  <td className="py-2 font-semibold">{r.symbol}</td>
-                  <td className={cn("py-2 text-right", signClass(r.metrics.cagr))}>{formatPct(r.metrics.cagr)}</td>
-                  <td className={cn("py-2 text-right", signClass(diff))}>{diff === null ? "—" : `${diff >= 0 ? "+" : ""}${(diff * 100).toFixed(1)} pts`}</td>
-                  <td className="py-2 text-right">{formatPct(r.metrics.max_drawdown)}</td>
-                  <td className="py-2 text-right">{formatNumber(r.metrics.sharpe)}</td>
-                  <td className="py-2 text-right">{r.metrics.num_trades}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {rows.map((r) => (
+          <button key={r.symbol} type="button" onClick={() => onPick(r.symbol)}
+            className={cn("flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors hover:bg-surface-2/60",
+              r.symbol === active ? "border-accent/60" : "border-border")}>
+            <span className="flex items-center justify-between">
+              <span className="font-semibold">{r.symbol}</span>
+              {r.beat !== null && (
+                <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", r.beat ? "bg-gain/15 text-gain" : "bg-loss/15 text-loss")}>
+                  {r.beat ? "Beat holding" : "Worse than holding"}
+                </span>
+              )}
+            </span>
+            <span className="num text-sm">
+              <span className={signClass(r.mine)}>{formatPct(r.mine)}</span> a year vs{" "}
+              <span className={signClass(r.hold)}>{formatPct(r.hold)}</span> holding
+            </span>
+            <span className="num text-xs text-muted">Worst drop {formatPct(r.seg.metrics.max_drawdown)}</span>
+          </button>
+        ))}
       </CardContent>
     </Card>
   );
 }
 
-function RunView({ run }: { run: Run }) {
+function RunView({ run, startingAmount }: { run: Run; startingAmount: number }) {
   const labels = (["out_of_sample", "holdout", "backtest", "in_sample"] as SegmentLabel[]).filter((l) => run.segments[l]);
   const [label, setLabel] = useState<SegmentLabel>(labels[0]);
   const seg = run.segments[label] ?? run.segments[labels[0]]!;
@@ -92,6 +86,7 @@ function RunView({ run }: { run: Run }) {
 
   return (
     <div className="flex flex-col gap-6">
+      <Scoreboard symbol={run.symbol} segments={run.segments} holdoutCount={run.holdout_count} startingAmount={startingAmount} />
       {run.windows.length > 0 && (
         <TestedDates
           windows={run.windows}
@@ -99,13 +94,12 @@ function RunView({ run }: { run: Run }) {
           holdoutStart={settingsQ.data?.holdout_start}
         />
       )}
-      <MetricsCards symbol={run.symbol} segments={run.segments} holdoutCount={run.holdout_count} />
 
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
           <div>
-            <CardTitle>Equity vs buy & hold</CardTitle>
-            <CardDescription>Starting from the same amount on the same day.</CardDescription>
+            <CardTitle>How the money grew</CardTitle>
+            <CardDescription>The strategy against just holding, starting with the same amount on the same day.</CardDescription>
           </div>
           {labels.length > 1 && (
             <Segmented label="Segment" value={label} onChange={setLabel}
@@ -128,8 +122,8 @@ function RunView({ run }: { run: Run }) {
       {run.windows.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Walk-forward windows</CardTitle>
-            <CardDescription>Each window tuned on its training years, then traded the next 6 months blind.</CardDescription>
+            <CardTitle>Window by window</CardTitle>
+            <CardDescription>For the curious: each 6-month blind test, what it was tuned on, and how it did.</CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <table className="w-full text-sm num">
@@ -188,7 +182,7 @@ export function ResultsPage() {
           <h1 className="text-2xl font-semibold tracking-tight">{data.strategy_name}</h1>
           <p className="max-w-3xl text-sm">{run.strategy_text}</p>
           <div className="flex flex-wrap gap-2">
-            <Badge>{data.mode === "walk_forward" ? "Walk-forward" : "Simple backtest"}</Badge>
+            <Badge>{data.mode === "walk_forward" ? "Tested blind (walk-forward)" : "Simple backtest"}</Badge>
             <Badge>Risk: {PRESET_NAME[run.risk.preset]}</Badge>
             <Badge>{run.risk.position_pct}% per trade</Badge>
             {data.request.config.slippage_bps > 0 && <Badge>{data.request.config.slippage_bps} bps slippage</Badge>}
@@ -197,12 +191,12 @@ export function ResultsPage() {
         <Link to="/build"><Button variant="secondary">New backtest</Button></Link>
       </div>
 
-      {data.runs.length > 1 && <Comparison data={data} onPick={setSymbol} />}
+      {data.runs.length > 1 && <AcrossStocks data={data} onPick={setSymbol} active={run.symbol} />}
       {data.runs.length > 1 && (
         <Segmented label="Stock" value={run.symbol} onChange={setSymbol}
           options={data.runs.map((r) => ({ value: r.symbol, label: r.symbol }))} />
       )}
-      <RunView key={run.symbol} run={run} />
+      <RunView key={run.symbol} run={run} startingAmount={data.request.config.initial_equity} />
     </div>
   );
 }

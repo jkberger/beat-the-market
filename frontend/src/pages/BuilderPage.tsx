@@ -14,7 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input, Select } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
-import { DEFAULT_STRATEGY, hasRanges } from "@/lib/defaults";
+import { autoName, DEFAULT_STRATEGY, hasRanges } from "@/lib/defaults";
 
 function useDebounced<T>(value: T, ms = 400): T {
   const [v, setV] = useState(value);
@@ -47,7 +47,10 @@ export function BuilderPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [strategy, setStrategy] = useState<Strategy>(DEFAULT_STRATEGY);
+  const [strategy, setStrategyRaw] = useState<Strategy>({ ...DEFAULT_STRATEGY, name: autoName(DEFAULT_STRATEGY) });
+  // Until the user types a name, keep the name in step with the rules.
+  const [nameTouched, setNameTouched] = useState(false);
+  const setStrategy = (s: Strategy) => setStrategyRaw(nameTouched ? s : { ...s, name: autoName(s) });
   const [symbols, setSymbols] = useState<string[]>([params.get("symbol")?.toUpperCase() || "AAPL"]);
   const [risk, setRisk] = useState<RiskSettings>(RISK_PRESETS.balanced);
   const [slippage, setSlippage] = useState(0);
@@ -62,7 +65,10 @@ export function BuilderPage() {
 
   const savedId = params.get("strategy");
   useEffect(() => {
-    if (savedId) api.getStrategy(Number(savedId)).then((r) => setStrategy(r.strategy)).catch(() => {});
+    if (savedId) api.getStrategy(Number(savedId)).then((r) => {
+      setNameTouched(true);
+      setStrategyRaw(r.strategy);
+    }).catch(() => {});
   }, [savedId]);
 
   const debounced = useDebounced(strategy);
@@ -134,7 +140,12 @@ export function BuilderPage() {
         <div className="flex flex-col gap-6">
           <Card>
             <CardHeader>
-              <Input aria-label="Strategy name" value={strategy.name} onChange={(e) => setStrategy({ ...strategy, name: e.target.value })}
+              <Input aria-label="Strategy name" value={strategy.name} onChange={(e) => {
+                  // Clearing the name hands it back to the automatic one.
+                  const name = e.target.value;
+                  setNameTouched(name.trim() !== "");
+                  setStrategyRaw({ ...strategy, name: name.trim() ? name : autoName(strategy) });
+                }}
                 className="h-10 max-w-sm border-transparent bg-transparent px-0 text-lg font-semibold focus:border-border focus:bg-surface-2 focus:px-3" />
               <CardDescription>Starts in cash. A buy signal goes in, a sell signal gets out, and it repeats every time the signals fire.</CardDescription>
             </CardHeader>

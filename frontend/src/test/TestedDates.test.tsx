@@ -20,6 +20,7 @@ test("explains training, blind test windows and the holdout", () => {
   );
   expect(screen.getByText(/2 windows/)).toBeInTheDocument();
   expect(screen.getByText(/first trained on 1980-12-12 to 1983-12-09/i)).toBeInTheDocument();
+  expect(screen.getByText(/tested on data it never trained on/i)).toBeInTheDocument();
   expect(screen.getByText(/tested blind from 1983-12-12 to 2024-11-15/i)).toBeInTheDocument();
   expect(screen.getByText(/2024-11-18 to 2026-11-17/)).toBeInTheDocument();
 });
